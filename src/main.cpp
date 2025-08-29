@@ -15,7 +15,8 @@
 #define TURRET_IN2 13
 #define LED_PIN 2
 #define HEADLIGHT_PIN 4
-#define CANNON_SERVO_PIN 5  // 포신 서보 모터 핀
+#define CANNON_SERVO_PIN 5   // 포신 서보 모터 핀 (우측 Y축으로 각도 조절)
+#define GUN_SERVO_PIN 18     // 포 서보 모터 핀 (A 버튼으로 당기기)
 
 // PWM 채널 정의
 #define LEFT_TRACK_PWM_CHANNEL 0
@@ -37,7 +38,8 @@ unsigned long lastIdleSoundTime = 0;
 const unsigned long idleSoundInterval = 3000; // 3초마다 효과음 1 재생
 
 // 서보 모터 객체
-Servo cannonServo;
+Servo cannonServo;  // 포신 서보 모터
+Servo gunServo;     // 포 서보 모터
 
 // 모터 제어 변수
 int leftTrackSpeed = 255;  // 기본값
@@ -45,7 +47,8 @@ int rightTrackSpeed = 255; // 기본값
 int leftTrackPWM = 0;
 int rightTrackPWM = 0;
 int turretPWM = 0;
-int cannonAngle = 90; // 기본 각도 (중앙)
+int cannonAngle = 90; // 포신 기본 각도 (중앙)
+int gunAngle = 90;    // 포 기본 각도 (중앙)
 
 // LED 상태
 bool headlightOn = false;
@@ -53,10 +56,10 @@ bool ledBlinking = false;
 unsigned long lastBlinkTime = 0;
 const unsigned long blinkInterval = 100; // 100ms 간격으로 깜빡임
 
-// 포신 발사 관련 변수
-bool cannonFiring = false;
-unsigned long cannonStartTime = 0;
-const unsigned long cannonDuration = 500; // 500ms 동안 포신 당김
+// 포 발사 관련 변수
+bool gunFiring = false;
+unsigned long gunStartTime = 0;
+const unsigned long gunDuration = 500; // 500ms 동안 포 당김
 
 // 효과음 파일 번호
 #define SOUND_IDLE 1
@@ -134,9 +137,14 @@ void setMotorSpeed(int in1, int in2, int pwmChannel, int speed) {
     }
 }
 
-// 서보 모터 제어 함수
-void setServoAngle(int angle) {
+// 포신 서보 모터 제어 함수
+void setCannonAngle(int angle) {
     cannonServo.write(angle);
+}
+
+// 포 서보 모터 제어 함수
+void setGunAngle(int angle) {
+    gunServo.write(angle);
 }
 
 // EEPROM에서 속도 값 읽기
@@ -236,17 +244,17 @@ void processGamepad(ControllerPtr ctl) {
     if (rightStickY != 0) {
         cannonAngle = map(rightStickY, -512, 512, 0, 180);
         cannonAngle = constrain(cannonAngle, 0, 180);
-        setServoAngle(cannonAngle);
+        setCannonAngle(cannonAngle);
     }
     
-    // A 버튼으로 포신 발사
-    if (ctl->a() && !cannonFiring) {
-        cannonFiring = true;
-        cannonStartTime = millis();
+    // A 버튼으로 포 발사
+    if (ctl->a() && !gunFiring) {
+        gunFiring = true;
+        gunStartTime = millis();
         ledBlinking = true;
         
-        // 포신 당기기
-        setServoAngle(45); // 포신을 아래로 당김
+        // 포 당기기
+        setGunAngle(45); // 포를 아래로 당김
         
         // 효과음 2 재생
         myDFPlayer.stop();
@@ -300,18 +308,18 @@ void processGamepad(ControllerPtr ctl) {
     }
 }
 
-// 포신 발사 처리
-void processCannonFiring() {
-    if (cannonFiring) {
+// 포 발사 처리
+void processGunFiring() {
+    if (gunFiring) {
         unsigned long currentTime = millis();
-        if (currentTime - cannonStartTime >= cannonDuration) {
-            // 포신 발사 완료
-            cannonFiring = false;
+        if (currentTime - gunStartTime >= gunDuration) {
+            // 포 발사 완료
+            gunFiring = false;
             ledBlinking = false;
             digitalWrite(LED_PIN, LOW);
             
-            // 포신을 원래 각도로 복원
-            setServoAngle(cannonAngle);
+            // 포를 원래 각도로 복원
+            setGunAngle(gunAngle);
             
             // 효과음 1 재생 재개 (게임패드가 연결되어 있지 않은 경우)
             if (!gamepadConnected) {
@@ -335,7 +343,7 @@ void processLEDBlinking() {
 
 // 효과음 반복 재생 처리
 void processIdleSound() {
-    if (!gamepadConnected && !cannonFiring) {
+    if (!gamepadConnected && !gunFiring) {
         unsigned long currentTime = millis();
         if (currentTime - lastIdleSoundTime >= idleSoundInterval) {
             myDFPlayer.play(SOUND_IDLE);
@@ -383,8 +391,12 @@ void setup() {
     ledcAttachPin(TURRET_IN1, TURRET_PWM_CHANNEL);
     
     // 서보 모터 초기화
-    cannonServo.attach(CANNON_SERVO_PIN);
-    setServoAngle(cannonAngle); // 초기 위치 설정
+    cannonServo.attach(CANNON_SERVO_PIN);  // 포신 서보 모터
+    gunServo.attach(GUN_SERVO_PIN);        // 포 서보 모터
+    
+    // 서보 모터 초기 위치 설정
+    setCannonAngle(cannonAngle);
+    setGunAngle(gunAngle);
     
     // DFPlayer 초기화
     DFPlayerSerial.begin(9600, SERIAL_8N1, DFPLAYER_RX, DFPLAYER_TX);
@@ -419,8 +431,8 @@ void loop() {
         processControllers();
     }
     
-    // 포신 발사 처리
-    processCannonFiring();
+    // 포 발사 처리
+    processGunFiring();
     
     // LED 깜빡임 처리
     processLEDBlinking();
