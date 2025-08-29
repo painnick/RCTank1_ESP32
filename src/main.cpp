@@ -44,7 +44,7 @@ bool gamepadConnected = false;
 DFPlayerMini_Fast myDFPlayer;
 HardwareSerial DFPlayerSerial(2); // UART2 사용
 unsigned long lastIdleSoundTime = 0;
-const unsigned long idleSoundInterval = 3000; // 3초마다 효과음 1 재생
+const unsigned long idleSoundInterval = 13000; // 13초마다 효과음 1 재생
 
 // 서보 모터 객체
 Servo cannonMountServo;  // 포 마운트 서보 모터
