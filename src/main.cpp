@@ -1,288 +1,424 @@
 #include <Arduino.h>
 #include <Bluepad32.h>
+#include <DFPlayerMini_Fast.h>
+#include <Adafruit_PWMServoDriver.h>
+#include <EEPROM.h>
 
+// 핀 정의
+#define DFPLAYER_RX 16
+#define DFPLAYER_TX 17
+#define LEFT_TRACK_IN1 25
+#define LEFT_TRACK_IN2 26
+#define RIGHT_TRACK_IN1 27
+#define RIGHT_TRACK_IN2 14
+#define TURRET_IN1 12
+#define TURRET_IN2 13
+#define LED_PIN 2
+#define HEADLIGHT_PIN 4
+
+// PWM 채널 정의
+#define LEFT_TRACK_PWM_CHANNEL 0
+#define RIGHT_TRACK_PWM_CHANNEL 1
+#define TURRET_PWM_CHANNEL 2
+
+// 서보 모터 정의
+#define SERVO_FREQ 50
+#define SERVO_MIN_PULSE 500
+#define SERVO_MAX_PULSE 2500
+#define SERVO_CANNON_PIN 0  // PCA9685의 0번 채널
+
+// EEPROM 주소
+#define EEPROM_LEFT_SPEED_ADDR 0
+#define EEPROM_RIGHT_SPEED_ADDR 1
+
+// 게임패드 관련 변수
 ControllerPtr myControllers[BP32_MAX_GAMEPADS];
+bool gamepadConnected = false;
 
-// This callback gets called any time a new gamepad is connected.
-// Up to 4 gamepads can be connected at the same time.
+// DFPlayer 관련 변수
+DFPlayerMini_Fast myDFPlayer;
+HardwareSerial DFPlayerSerial(2); // UART2 사용
+
+// PWM 서보 드라이버
+Adafruit_PWMServoDriver pwm = Adafruit_PWMServoDriver();
+
+// 모터 제어 변수
+int leftTrackSpeed = 255;  // 기본값
+int rightTrackSpeed = 255; // 기본값
+int leftTrackPWM = 0;
+int rightTrackPWM = 0;
+int turretPWM = 0;
+int cannonAngle = 90; // 기본 각도 (중앙)
+
+// LED 상태
+bool headlightOn = false;
+bool ledBlinking = false;
+unsigned long lastBlinkTime = 0;
+const unsigned long blinkInterval = 100; // 100ms 간격으로 깜빡임
+
+// 포신 발사 관련 변수
+bool cannonFiring = false;
+unsigned long cannonStartTime = 0;
+const unsigned long cannonDuration = 500; // 500ms 동안 포신 당김
+
+// 효과음 파일 번호
+#define SOUND_IDLE 1
+#define SOUND_CANNON 2
+
+// 게임패드 연결 콜백
 void onConnectedController(ControllerPtr ctl) {
     bool foundEmptySlot = false;
     for (int i = 0; i < BP32_MAX_GAMEPADS; i++) {
         if (myControllers[i] == nullptr) {
-            Serial.printf("CALLBACK: Controller is connected, index=%d\n", i);
-            // Additionally, you can get certain gamepad properties like:
-            // Model, VID, PID, BTAddr, flags, etc.
+            Serial.printf("게임패드 연결됨, 인덱스=%d\n", i);
             ControllerProperties properties = ctl->getProperties();
-            Serial.printf("Controller model: %s, VID=0x%04x, PID=0x%04x\n", ctl->getModelName().c_str(), properties.vendor_id,
-                           properties.product_id);
+            Serial.printf("컨트롤러 모델: %s, VID=0x%04x, PID=0x%04x\n",
+                         ctl->getModelName().c_str(), properties.vendor_id, properties.product_id);
             myControllers[i] = ctl;
             foundEmptySlot = true;
+            gamepadConnected = true;
+
+            // 게임패드 연결 시 효과음 1 중단
+            myDFPlayer.stop();
             break;
         }
     }
     if (!foundEmptySlot) {
-        Serial.println("CALLBACK: Controller connected, but could not found empty slot");
+        Serial.println("게임패드 연결됨, 하지만 빈 슬롯을 찾을 수 없음");
     }
 }
 
+// 게임패드 연결 해제 콜백
 void onDisconnectedController(ControllerPtr ctl) {
     bool foundController = false;
-
     for (int i = 0; i < BP32_MAX_GAMEPADS; i++) {
         if (myControllers[i] == ctl) {
-            Serial.printf("CALLBACK: Controller disconnected from index=%d\n", i);
+            Serial.printf("게임패드 연결 해제됨, 인덱스=%d\n", i);
             myControllers[i] = nullptr;
             foundController = true;
             break;
         }
     }
 
+    // 모든 게임패드가 연결 해제되었는지 확인
+    gamepadConnected = false;
+    for (int i = 0; i < BP32_MAX_GAMEPADS; i++) {
+        if (myControllers[i] != nullptr) {
+            gamepadConnected = true;
+            break;
+        }
+    }
+
+    if (!gamepadConnected) {
+        // 모든 게임패드가 연결 해제되면 효과음 1 재생 시작
+        myDFPlayer.loop(SOUND_IDLE);
+    }
+
     if (!foundController) {
-        Serial.println("CALLBACK: Controller disconnected, but not found in myControllers");
+        Serial.println("게임패드 연결 해제됨, 하지만 myControllers에서 찾을 수 없음");
     }
 }
 
-void dumpGamepad(ControllerPtr ctl) {
-    Serial.printf(
-        "idx=%d, dpad: 0x%02x, buttons: 0x%04x, axis L: %4d, %4d, axis R: %4d, %4d, brake: %4d, throttle: %4d, "
-        "misc: 0x%02x, gyro x:%6d y:%6d z:%6d, accel x:%6d y:%6d z:%6d\n",
-        ctl->index(),        // Controller Index
-        ctl->dpad(),         // D-pad
-        ctl->buttons(),      // bitmask of pressed buttons
-        ctl->axisX(),        // (-511 - 512) left X Axis
-        ctl->axisY(),        // (-511 - 512) left Y axis
-        ctl->axisRX(),       // (-511 - 512) right X axis
-        ctl->axisRY(),       // (-511 - 512) right Y axis
-        ctl->brake(),        // (0 - 1023): brake button
-        ctl->throttle(),     // (0 - 1023): throttle (AKA gas) button
-        ctl->miscButtons(),  // bitmask of pressed "misc" buttons
-        ctl->gyroX(),        // Gyro X
-        ctl->gyroY(),        // Gyro Y
-        ctl->gyroZ(),        // Gyro Z
-        ctl->accelX(),       // Accelerometer X
-        ctl->accelY(),       // Accelerometer Y
-        ctl->accelZ()        // Accelerometer Z
-    );
-}
-
-void dumpMouse(ControllerPtr ctl) {
-    Serial.printf("idx=%d, buttons: 0x%04x, scrollWheel=0x%04x, delta X: %4d, delta Y: %4d\n",
-                   ctl->index(),        // Controller Index
-                   ctl->buttons(),      // bitmask of pressed buttons
-                   ctl->scrollWheel(),  // Scroll Wheel
-                   ctl->deltaX(),       // (-511 - 512) left X Axis
-                   ctl->deltaY()        // (-511 - 512) left Y axis
-    );
-}
-
-void dumpKeyboard(ControllerPtr ctl) {
-    static const char* key_names[] = {
-        // clang-format off
-        // To avoid having too much noise in this file, only a few keys are mapped to strings.
-        // Starts with "A", which is offset 4.
-        "A", "B", "C", "D", "E", "F", "G", "H", "I", "J", "K", "L", "M", "N", "O", "P", "Q", "R", "S", "T", "U", "V",
-        "W", "X", "Y", "Z", "1", "2", "3", "4", "5", "6", "7", "8", "9", "0",
-        // Special keys
-        "Enter", "Escape", "Backspace", "Tab", "Spacebar", "Underscore", "Equal", "OpenBracket", "CloseBracket",
-        "Backslash", "Tilde", "SemiColon", "Quote", "GraveAccent", "Comma", "Dot", "Slash", "CapsLock",
-        // Function keys
-        "F1", "F2", "F3", "F4", "F5", "F6", "F7", "F8", "F9", "F10", "F11", "F12",
-        // Cursors and others
-        "PrintScreen", "ScrollLock", "Pause", "Insert", "Home", "PageUp", "Delete", "End", "PageDown",
-        "RightArrow", "LeftArrow", "DownArrow", "UpArrow",
-        // clang-format on
-    };
-    static const char* modifier_names[] = {
-        // clang-format off
-        // From 0xe0 to 0xe7
-        "Left Control", "Left Shift", "Left Alt", "Left Meta",
-        "Right Control", "Right Shift", "Right Alt", "Right Meta",
-        // clang-format on
-    };
-    Serial.printf("idx=%d, Pressed keys: ", ctl->index());
-    for (int key = Keyboard_A; key <= Keyboard_UpArrow; key++) {
-        if (ctl->isKeyPressed(static_cast<KeyboardKey>(key))) {
-            const char* keyName = key_names[key-4];
-            Serial.printf("%s,", keyName);
-       }
+// DC 모터 제어 함수
+void setMotorSpeed(int in1, int in2, int pwmChannel, int speed) {
+    if (speed > 0) {
+        digitalWrite(in1, HIGH);
+        digitalWrite(in2, LOW);
+        ledcWrite(pwmChannel, speed);
+    } else if (speed < 0) {
+        digitalWrite(in1, LOW);
+        digitalWrite(in2, HIGH);
+        ledcWrite(pwmChannel, -speed);
+    } else {
+        digitalWrite(in1, LOW);
+        digitalWrite(in2, LOW);
+        ledcWrite(pwmChannel, 0);
     }
-    for (int key = Keyboard_LeftControl; key <= Keyboard_RightMeta; key++) {
-        if (ctl->isKeyPressed(static_cast<KeyboardKey>(key))) {
-            const char* keyName = modifier_names[key-0xe0];
-            Serial.printf("%s,", keyName);
-        }
+}
+
+// 서보 모터 제어 함수
+void setServoAngle(int angle) {
+    int pulse = map(angle, 0, 180, SERVO_MIN_PULSE, SERVO_MAX_PULSE);
+    pwm.setPWM(SERVO_CANNON_PIN, 0, pulse);
+}
+
+// EEPROM에서 속도 값 읽기
+void loadSpeedSettings() {
+    leftTrackSpeed = EEPROM.read(EEPROM_LEFT_SPEED_ADDR);
+    rightTrackSpeed = EEPROM.read(EEPROM_RIGHT_SPEED_ADDR);
+
+    // 기본값 설정 (EEPROM이 초기화되지 않은 경우)
+    if (leftTrackSpeed == 0 || leftTrackSpeed > 255) {
+        leftTrackSpeed = 255;
+        EEPROM.write(EEPROM_LEFT_SPEED_ADDR, leftTrackSpeed);
     }
-    Console.printf("\n");
+    if (rightTrackSpeed == 0 || rightTrackSpeed > 255) {
+        rightTrackSpeed = 255;
+        EEPROM.write(EEPROM_RIGHT_SPEED_ADDR, rightTrackSpeed);
+    }
+    EEPROM.commit();
+
+    Serial.printf("로드된 속도 설정: 좌측=%d, 우측=%d\n", leftTrackSpeed, rightTrackSpeed);
 }
 
-void dumpBalanceBoard(ControllerPtr ctl) {
-    Serial.printf("idx=%d,  TL=%u, TR=%u, BL=%u, BR=%u, temperature=%d\n",
-                   ctl->index(),        // Controller Index
-                   ctl->topLeft(),      // top-left scale
-                   ctl->topRight(),     // top-right scale
-                   ctl->bottomLeft(),   // bottom-left scale
-                   ctl->bottomRight(),  // bottom-right scale
-                   ctl->temperature()   // temperature: used to adjust the scale value's precision
-    );
+// EEPROM에 속도 값 저장
+void saveSpeedSettings() {
+    EEPROM.write(EEPROM_LEFT_SPEED_ADDR, leftTrackSpeed);
+    EEPROM.write(EEPROM_RIGHT_SPEED_ADDR, rightTrackSpeed);
+    EEPROM.commit();
+    Serial.printf("속도 설정 저장됨: 좌측=%d, 우측=%d\n", leftTrackSpeed, rightTrackSpeed);
 }
 
+// 게임패드 처리 함수
 void processGamepad(ControllerPtr ctl) {
-    // There are different ways to query whether a button is pressed.
-    // By query each button individually:
-    //  a(), b(), x(), y(), l1(), etc...
-    if (ctl->a()) {
-        static int colorIdx = 0;
-        // Some gamepads like DS4 and DualSense support changing the color LED.
-        // It is possible to change it by calling:
-        switch (colorIdx % 3) {
-            case 0:
-                // Red
-                ctl->setColorLED(255, 0, 0);
-                break;
-            case 1:
-                // Green
-                ctl->setColorLED(0, 255, 0);
-                break;
-            case 2:
-                // Blue
-                ctl->setColorLED(0, 0, 255);
-                break;
+    // 좌측 스틱으로 트랙 제어
+    int leftStickX = ctl->axisX();
+    int leftStickY = ctl->axisY();
+
+    // 데드존 설정
+    if (abs(leftStickX) < 50) leftStickX = 0;
+    if (abs(leftStickY) < 50) leftStickY = 0;
+
+    // 좌측 스틱 Y축으로 전진/후진 제어
+    int leftTrackSpeed = map(leftStickY, -512, 512, -255, 255);
+    int rightTrackSpeed = leftTrackSpeed;
+
+    // 좌측 스틱 X축으로 회전 제어
+    if (leftStickX != 0) {
+        int turnSpeed = map(abs(leftStickX), 0, 512, 0, 255);
+        if (leftStickX > 0) {
+            // 우회전
+            leftTrackSpeed += turnSpeed;
+            rightTrackSpeed -= turnSpeed;
+        } else {
+            // 좌회전
+            leftTrackSpeed -= turnSpeed;
+            rightTrackSpeed += turnSpeed;
         }
-        colorIdx++;
     }
 
-    if (ctl->b()) {
-        // Turn on the 4 LED. Each bit represents one LED.
-        static int led = 0;
-        led++;
-        // Some gamepads like the DS3, DualSense, Nintendo Wii, Nintendo Switch
-        // support changing the "Player LEDs": those 4 LEDs that usually indicate
-        // the "gamepad seat".
-        // It is possible to change them by calling:
-        ctl->setPlayerLEDs(led & 0x0f);
+    // 속도 제한
+    leftTrackSpeed = constrain(leftTrackSpeed, -255, 255);
+    rightTrackSpeed = constrain(rightTrackSpeed, -255, 255);
+
+    // L1, L2로 좌측 트랙 속도 조절
+    if (ctl->l1()) {
+        leftTrackSpeed = map(leftTrackSpeed, -255, 255, -leftTrackSpeed, leftTrackSpeed);
+    }
+    if (ctl->l2() > 100) {
+        int l2Value = map(ctl->l2(), 0, 1023, 0, 255);
+        leftTrackSpeed = map(leftTrackSpeed, -255, 255, -l2Value, l2Value);
     }
 
-    if (ctl->x()) {
-        // Some gamepads like DS3, DS4, DualSense, Switch, Xbox One S, Stadia support rumble.
-        // It is possible to set it by calling:
-        // Some controllers have two motors: "strong motor", "weak motor".
-        // It is possible to control them independently.
-        ctl->playDualRumble(0 /* delayedStartMs */, 250 /* durationMs */, 0x80 /* weakMagnitude */,
-                            0x40 /* strongMagnitude */);
+    // R1, R2로 우측 트랙 속도 조절
+    if (ctl->r1()) {
+        rightTrackSpeed = map(rightTrackSpeed, -255, 255, -rightTrackSpeed, rightTrackSpeed);
+    }
+    if (ctl->r2() > 100) {
+        int r2Value = map(ctl->r2(), 0, 1023, 0, 255);
+        rightTrackSpeed = map(rightTrackSpeed, -255, 255, -r2Value, r2Value);
     }
 
-    // Another way to query controller data is by getting the buttons() function.
-    // See how the different "dump*" functions dump the Controller info.
-    dumpGamepad(ctl);
+    // 모터 제어
+    setMotorSpeed(LEFT_TRACK_IN1, LEFT_TRACK_IN2, LEFT_TRACK_PWM_CHANNEL, leftTrackSpeed);
+    setMotorSpeed(RIGHT_TRACK_IN1, RIGHT_TRACK_IN2, RIGHT_TRACK_PWM_CHANNEL, rightTrackSpeed);
+
+    // 우측 스틱으로 터렛과 포신 제어
+    int rightStickX = ctl->axisRX();
+    int rightStickY = ctl->axisRY();
+
+    // 데드존 설정
+    if (abs(rightStickX) < 50) rightStickX = 0;
+    if (abs(rightStickY) < 50) rightStickY = 0;
+
+    // 우측 스틱 X축으로 터렛 제어
+    int turretSpeed = map(rightStickX, -512, 512, -255, 255);
+    setMotorSpeed(TURRET_IN1, TURRET_IN2, TURRET_PWM_CHANNEL, turretSpeed);
+
+    // 우측 스틱 Y축으로 포신 각도 제어
+    if (rightStickY != 0) {
+        cannonAngle = map(rightStickY, -512, 512, 0, 180);
+        cannonAngle = constrain(cannonAngle, 0, 180);
+        setServoAngle(cannonAngle);
+    }
+
+    // A 버튼으로 포신 발사
+    if (ctl->a() && !cannonFiring) {
+        cannonFiring = true;
+        cannonStartTime = millis();
+        ledBlinking = true;
+
+        // 포신 당기기
+        setServoAngle(45); // 포신을 아래로 당김
+
+        // 효과음 2 재생
+        myDFPlayer.stop();
+        myDFPlayer.play(SOUND_CANNON);
+    }
+
+    // X 버튼으로 헤드라이트 토글
+    static bool xButtonPressed = false;
+    if (ctl->x() && !xButtonPressed) {
+        headlightOn = !headlightOn;
+        digitalWrite(HEADLIGHT_PIN, headlightOn ? HIGH : LOW);
+        xButtonPressed = true;
+    } else if (!ctl->x()) {
+        xButtonPressed = false;
+    }
+
+    // L1, L2로 좌측 트랙 속도 설정 저장
+    static bool l1Pressed = false, l2Pressed = false;
+    if (ctl->l1() && !l1Pressed) {
+        leftTrackSpeed = constrain(leftTrackSpeed + 10, 0, 255);
+        saveSpeedSettings();
+        l1Pressed = true;
+    } else if (!ctl->l1()) {
+        l1Pressed = false;
+    }
+
+    if (ctl->l2() > 100 && !l2Pressed) {
+        leftTrackSpeed = constrain(leftTrackSpeed - 10, 0, 255);
+        saveSpeedSettings();
+        l2Pressed = true;
+    } else if (ctl->l2() <= 100) {
+        l2Pressed = false;
+    }
+
+    // R1, R2로 우측 트랙 속도 설정 저장
+    static bool r1Pressed = false, r2Pressed = false;
+    if (ctl->r1() && !r1Pressed) {
+        rightTrackSpeed = constrain(rightTrackSpeed + 10, 0, 255);
+        saveSpeedSettings();
+        r1Pressed = true;
+    } else if (!ctl->r1()) {
+        r1Pressed = false;
+    }
+
+    if (ctl->r2() > 100 && !r2Pressed) {
+        rightTrackSpeed = constrain(rightTrackSpeed - 10, 0, 255);
+        saveSpeedSettings();
+        r2Pressed = true;
+    } else if (ctl->r2() <= 100) {
+        r2Pressed = false;
+    }
 }
 
-void processMouse(ControllerPtr ctl) {
-    // This is just an example.
-    if (ctl->scrollWheel() > 0) {
-        // Do Something
-    } else if (ctl->scrollWheel() < 0) {
-        // Do something else
-    }
+// 포신 발사 처리
+void processCannonFiring() {
+    if (cannonFiring) {
+        unsigned long currentTime = millis();
+        if (currentTime - cannonStartTime >= cannonDuration) {
+            // 포신 발사 완료
+            cannonFiring = false;
+            ledBlinking = false;
+            digitalWrite(LED_PIN, LOW);
 
-    // See "dumpMouse" for possible things to query.
-    dumpMouse(ctl);
-}
+            // 포신을 원래 각도로 복원
+            setServoAngle(cannonAngle);
 
-void processKeyboard(ControllerPtr ctl) {
-    if (!ctl->isAnyKeyPressed())
-        return;
-
-    // This is just an example.
-    if (ctl->isKeyPressed(Keyboard_A)) {
-        // Do Something
-        Serial.println("Key 'A' pressed");
-    }
-
-    // Don't do "else" here.
-    // Multiple keys can be pressed at the same time.
-    if (ctl->isKeyPressed(Keyboard_LeftShift)) {
-        // Do something else
-        Serial.println("Key 'LEFT SHIFT' pressed");
-    }
-
-    // Don't do "else" here.
-    // Multiple keys can be pressed at the same time.
-    if (ctl->isKeyPressed(Keyboard_LeftArrow)) {
-        // Do something else
-        Serial.println("Key 'Left Arrow' pressed");
-    }
-
-    // See "dumpKeyboard" for possible things to query.
-    dumpKeyboard(ctl);
-}
-
-void processBalanceBoard(ControllerPtr ctl) {
-    // This is just an example.
-    if (ctl->topLeft() > 10000) {
-        // Do Something
-    }
-
-    // See "dumpBalanceBoard" for possible things to query.
-    dumpBalanceBoard(ctl);
-}
-
-void processControllers() {
-    for (auto myController : myControllers) {
-        if (myController && myController->isConnected() && myController->hasData()) {
-            if (myController->isGamepad()) {
-                processGamepad(myController);
-            } else if (myController->isMouse()) {
-                processMouse(myController);
-            } else if (myController->isKeyboard()) {
-                processKeyboard(myController);
-            } else if (myController->isBalanceBoard()) {
-                processBalanceBoard(myController);
-            } else {
-                Serial.println("Unsupported controller");
+            // 효과음 1 재생 재개 (게임패드가 연결되어 있지 않은 경우)
+            if (!gamepadConnected) {
+                myDFPlayer.loop(SOUND_IDLE);
             }
         }
     }
 }
 
-// Arduino setup function. Runs in CPU 1
-void setup() {
-    Serial.begin(115200);
-    Serial.printf("Firmware: %s\n", BP32.firmwareVersion());
-    const uint8_t* addr = BP32.localBdAddress();
-    Serial.printf("BD Addr: %2X:%2X:%2X:%2X:%2X:%2X\n", addr[0], addr[1], addr[2], addr[3], addr[4], addr[5]);
-
-    // Setup the Bluepad32 callbacks
-    BP32.setup(&onConnectedController, &onDisconnectedController);
-
-    // "forgetBluetoothKeys()" should be called when the user performs
-    // a "device factory reset", or similar.
-    // Calling "forgetBluetoothKeys" in setup() just as an example.
-    // Forgetting Bluetooth keys prevents "paired" gamepads to reconnect.
-    // But it might also fix some connection / re-connection issues.
-    BP32.forgetBluetoothKeys();
-
-    // Enables mouse / touchpad support for gamepads that support them.
-    // When enabled, controllers like DualSense and DualShock4 generate two connected devices:
-    // - First one: the gamepad
-    // - Second one, which is a "virtual device", is a mouse.
-    // By default, it is disabled.
-    BP32.enableVirtualDevice(false);
+// LED 깜빡임 처리
+void processLEDBlinking() {
+    if (ledBlinking) {
+        unsigned long currentTime = millis();
+        if (currentTime - lastBlinkTime >= blinkInterval) {
+            digitalWrite(LED_PIN, !digitalRead(LED_PIN));
+            lastBlinkTime = currentTime;
+        }
+    }
 }
 
-// Arduino loop function. Runs in CPU 1.
+// 모든 컨트롤러 처리
+void processControllers() {
+    for (auto myController : myControllers) {
+        if (myController && myController->isConnected() && myController->hasData()) {
+            if (myController->isGamepad()) {
+                processGamepad(myController);
+            }
+        }
+    }
+}
+
+// 설정 함수
+void setup() {
+    Serial.begin(115200);
+    Serial.println("RC 탱크 초기화 중...");
+
+    // EEPROM 초기화
+    EEPROM.begin(512);
+
+    // 핀 모드 설정
+    pinMode(LEFT_TRACK_IN1, OUTPUT);
+    pinMode(LEFT_TRACK_IN2, OUTPUT);
+    pinMode(RIGHT_TRACK_IN1, OUTPUT);
+    pinMode(RIGHT_TRACK_IN2, OUTPUT);
+    pinMode(TURRET_IN1, OUTPUT);
+    pinMode(TURRET_IN2, OUTPUT);
+    pinMode(LED_PIN, OUTPUT);
+    pinMode(HEADLIGHT_PIN, OUTPUT);
+
+    // PWM 설정
+    ledcSetup(LEFT_TRACK_PWM_CHANNEL, 5000, 8);
+    ledcSetup(RIGHT_TRACK_PWM_CHANNEL, 5000, 8);
+    ledcSetup(TURRET_PWM_CHANNEL, 5000, 8);
+
+    ledcAttachPin(LEFT_TRACK_IN1, LEFT_TRACK_PWM_CHANNEL);
+    ledcAttachPin(RIGHT_TRACK_IN1, RIGHT_TRACK_PWM_CHANNEL);
+    ledcAttachPin(TURRET_IN1, TURRET_PWM_CHANNEL);
+
+    // PWM 서보 드라이버 초기화
+    pwm.begin();
+    pwm.setOscillatorFrequency(27000000);
+    pwm.setPWMFreq(SERVO_FREQ);
+    delay(10);
+
+    // 서보 모터 초기 위치 설정
+    setServoAngle(cannonAngle);
+
+    // DFPlayer 초기화
+    DFPlayerSerial.begin(9600, SERIAL_8N1, DFPLAYER_RX, DFPLAYER_TX);
+    myDFPlayer.begin(DFPlayerSerial);
+    myDFPlayer.volume(20); // 볼륨 설정 (0-30)
+
+    // 효과음 1 재생 시작
+    myDFPlayer.loop(SOUND_IDLE);
+
+    // EEPROM에서 속도 설정 로드
+    loadSpeedSettings();
+
+    // Bluepad32 설정
+    BP32.setup(&onConnectedController, &onDisconnectedController);
+    BP32.forgetBluetoothKeys();
+    BP32.enableVirtualDevice(false);
+
+    Serial.printf("펌웨어 버전: %s\n", BP32.firmwareVersion());
+    const uint8_t* addr = BP32.localBdAddress();
+    Serial.printf("BD 주소: %2X:%2X:%2X:%2X:%2X:%2X\n",
+                 addr[0], addr[1], addr[2], addr[3], addr[4], addr[5]);
+
+    Serial.println("RC 탱크 초기화 완료!");
+}
+
+// 메인 루프
 void loop() {
-    // This call fetches all the controllers' data.
-    // Call this function in your main loop.
+    // Bluepad32 업데이트
     bool dataUpdated = BP32.update();
-    if (dataUpdated)
+    if (dataUpdated) {
         processControllers();
+    }
 
-    // The main loop must have some kind of "yield to lower priority task" event.
-    // Otherwise, the watchdog will get triggered.
-    // If your main loop doesn't have one, just add a simple `vTaskDelay(1)`.
-    // Detailed info here:
-    // https://stackoverflow.com/questions/66278271/task-watchdog-got-triggered-the-tasks-did-not-reset-the-watchdog-in-time
+    // 포신 발사 처리
+    processCannonFiring();
 
-    //     vTaskDelay(1);
-    delay(150);
+    // LED 깜빡임 처리
+    processLEDBlinking();
+
+    delay(10); // 10ms 딜레이
 }
