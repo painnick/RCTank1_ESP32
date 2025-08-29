@@ -22,9 +22,12 @@ static const char* MAIN_TAG = "RC_TANK";
 #define CANNON_SERVO_PIN 18     // 포신 서보 모터 핀 (A 버튼으로 당기기)
 
 // PWM 채널 정의
-#define LEFT_TRACK_PWM_CHANNEL 0
-#define RIGHT_TRACK_PWM_CHANNEL 1
-#define TURRET_PWM_CHANNEL 2
+#define LEFT_TRACK_IN1_PWM_CHANNEL 0
+#define LEFT_TRACK_IN2_PWM_CHANNEL 1
+#define RIGHT_TRACK_IN1_PWM_CHANNEL 2
+#define RIGHT_TRACK_IN2_PWM_CHANNEL 3
+#define TURRET_IN1_PWM_CHANNEL 4
+#define TURRET_IN2_PWM_CHANNEL 5
 
 // EEPROM 주소
 #define EEPROM_LEFT_SPEED_ADDR 0
@@ -124,19 +127,20 @@ void onDisconnectedController(ControllerPtr ctl) {
 }
 
 // DC 모터 제어 함수
-void setMotorSpeed(int in1, int in2, int pwmChannel, int speed) {
+void setMotorSpeed(int in1, int in2, int in1PwmChannel, int in2PwmChannel, int speed) {
+    ESP_LOGD(MAIN_TAG, "setMotorSpeed IN1:%d IN2:%d Ch1:%d Ch2:%d Speed:%d", in1, in2, in1PwmChannel, in2PwmChannel, speed);
     if (speed > 0) {
-        digitalWrite(in1, HIGH);
-        digitalWrite(in2, LOW);
-        ledcWrite(pwmChannel, speed);
+        // 정방향 회전
+        ledcWrite(in1PwmChannel, speed);
+        ledcWrite(in2PwmChannel, 0);
     } else if (speed < 0) {
-        digitalWrite(in1, LOW);
-        digitalWrite(in2, HIGH);
-        ledcWrite(pwmChannel, -speed);
+        // 역방향 회전
+        ledcWrite(in1PwmChannel, 0);
+        ledcWrite(in2PwmChannel, -speed);
     } else {
-        digitalWrite(in1, LOW);
-        digitalWrite(in2, LOW);
-        ledcWrite(pwmChannel, 0);
+        // 정지
+        ledcWrite(in1PwmChannel, 0);
+        ledcWrite(in2PwmChannel, 0);
     }
 }
 
@@ -228,8 +232,8 @@ void processGamepad(ControllerPtr ctl) {
     }
 
     // 모터 제어
-    setMotorSpeed(LEFT_TRACK_IN1, LEFT_TRACK_IN2, LEFT_TRACK_PWM_CHANNEL, leftTrackSpeed);
-    setMotorSpeed(RIGHT_TRACK_IN1, RIGHT_TRACK_IN2, RIGHT_TRACK_PWM_CHANNEL, rightTrackSpeed);
+    setMotorSpeed(LEFT_TRACK_IN1, LEFT_TRACK_IN2, LEFT_TRACK_IN1_PWM_CHANNEL, LEFT_TRACK_IN2_PWM_CHANNEL, leftTrackSpeed);
+    setMotorSpeed(RIGHT_TRACK_IN1, RIGHT_TRACK_IN2, RIGHT_TRACK_IN1_PWM_CHANNEL, RIGHT_TRACK_IN2_PWM_CHANNEL, rightTrackSpeed);
 
     // 우측 스틱으로 터렛과 포 마운트 제어
     int rightStickX = ctl->axisRX();
@@ -241,7 +245,7 @@ void processGamepad(ControllerPtr ctl) {
 
     // 우측 스틱 X축으로 터렛 제어
     int turretSpeed = map(rightStickX, -512, 512, -255, 255);
-    setMotorSpeed(TURRET_IN1, TURRET_IN2, TURRET_PWM_CHANNEL, turretSpeed);
+    setMotorSpeed(TURRET_IN1, TURRET_IN2, TURRET_IN1_PWM_CHANNEL, TURRET_IN2_PWM_CHANNEL, turretSpeed);
 
     // 우측 스틱 Y축으로 포 마운트 각도 제어
     if (rightStickY != 0) {
@@ -370,7 +374,11 @@ void processControllers() {
 
 // 설정 함수
 void setup() {
-    Serial.begin(115200);
+
+    // 전원 공급을 위한 대기
+    delay(2000);
+
+    // Serial.begin(115200);
     ESP_LOGI(MAIN_TAG, "RC Tank Initialization...");
 
     // Brownout을 피하기 위해 CPU 클록을 160 MHz로 낮춤
@@ -390,13 +398,23 @@ void setup() {
     pinMode(HEADLIGHT_PIN, OUTPUT);
 
     // PWM 설정
-    ledcSetup(LEFT_TRACK_PWM_CHANNEL, 5000, 8);
-    ledcSetup(RIGHT_TRACK_PWM_CHANNEL, 5000, 8);
-    ledcSetup(TURRET_PWM_CHANNEL, 5000, 8);
+    ledcSetup(LEFT_TRACK_IN1_PWM_CHANNEL, 5000, 8);
+    ledcSetup(LEFT_TRACK_IN2_PWM_CHANNEL, 5000, 8);
+    ledcSetup(RIGHT_TRACK_IN1_PWM_CHANNEL, 5000, 8);
+    ledcSetup(RIGHT_TRACK_IN2_PWM_CHANNEL, 5000, 8);
+    ledcSetup(TURRET_IN1_PWM_CHANNEL, 5000, 8);
+    ledcSetup(TURRET_IN2_PWM_CHANNEL, 5000, 8);
 
-    ledcAttachPin(LEFT_TRACK_IN1, LEFT_TRACK_PWM_CHANNEL);
-    ledcAttachPin(RIGHT_TRACK_IN1, RIGHT_TRACK_PWM_CHANNEL);
-    ledcAttachPin(TURRET_IN1, TURRET_PWM_CHANNEL);
+    ledcAttachPin(LEFT_TRACK_IN1, LEFT_TRACK_IN1_PWM_CHANNEL);
+    ledcAttachPin(LEFT_TRACK_IN2, LEFT_TRACK_IN2_PWM_CHANNEL);
+    ledcAttachPin(RIGHT_TRACK_IN1, RIGHT_TRACK_IN1_PWM_CHANNEL);
+    ledcAttachPin(RIGHT_TRACK_IN2, RIGHT_TRACK_IN2_PWM_CHANNEL);
+    ledcAttachPin(TURRET_IN1, TURRET_IN1_PWM_CHANNEL);
+    ledcAttachPin(TURRET_IN2, TURRET_IN2_PWM_CHANNEL);
+
+    setMotorSpeed(LEFT_TRACK_IN1, LEFT_TRACK_IN2, LEFT_TRACK_IN1_PWM_CHANNEL, LEFT_TRACK_IN2_PWM_CHANNEL, 0);
+    setMotorSpeed(RIGHT_TRACK_IN1, RIGHT_TRACK_IN2, RIGHT_TRACK_IN1_PWM_CHANNEL, RIGHT_TRACK_IN2_PWM_CHANNEL, 0);
+    setMotorSpeed(TURRET_IN1, TURRET_IN2, TURRET_IN1_PWM_CHANNEL, TURRET_IN2_PWM_CHANNEL, 0);
 
     // 서보 모터 초기화
     cannonMountServo.attach(CANNON_MOUNT_SERVO_PIN);  // 포 마운트 서보 모터
