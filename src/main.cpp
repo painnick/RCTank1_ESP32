@@ -3,6 +3,9 @@
 #include <DFPlayerMini_Fast.h>
 #include <ESP32Servo.h>
 #include <EEPROM.h>
+#include <esp_log.h>
+
+static const char* MAIN_TAG = "RC_TANK";
 
 // 핀 정의
 #define DFPLAYER_RX 32
@@ -70,10 +73,10 @@ void onConnectedController(ControllerPtr ctl) {
     bool foundEmptySlot = false;
     for (int i = 0; i < BP32_MAX_GAMEPADS; i++) {
         if (myControllers[i] == nullptr) {
-            Serial.printf("게임패드 연결됨, 인덱스=%d\n", i);
+            ESP_LOGI(MAIN_TAG, "Gamepad connected, index=%d", i);
             ControllerProperties properties = ctl->getProperties();
-            Serial.printf("컨트롤러 모델: %s, VID=0x%04x, PID=0x%04x\n",
-                         ctl->getModelName().c_str(), properties.vendor_id, properties.product_id);
+            ESP_LOGI(MAIN_TAG, "Controller model: %s, VID=0x%04x, PID=0x%04x",
+                     ctl->getModelName().c_str(), properties.vendor_id, properties.product_id);
             myControllers[i] = ctl;
             foundEmptySlot = true;
             gamepadConnected = true;
@@ -84,7 +87,7 @@ void onConnectedController(ControllerPtr ctl) {
         }
     }
     if (!foundEmptySlot) {
-        Serial.println("게임패드 연결됨, 하지만 빈 슬롯을 찾을 수 없음");
+        ESP_LOGW(MAIN_TAG, "Gamepad connected, but no empty slot found");
     }
 }
 
@@ -93,7 +96,7 @@ void onDisconnectedController(ControllerPtr ctl) {
     bool foundController = false;
     for (int i = 0; i < BP32_MAX_GAMEPADS; i++) {
         if (myControllers[i] == ctl) {
-            Serial.printf("게임패드 연결 해제됨, 인덱스=%d\n", i);
+            ESP_LOGI(MAIN_TAG, "Gamepad disconnected, index=%d", i);
             myControllers[i] = nullptr;
             foundController = true;
             break;
@@ -116,7 +119,7 @@ void onDisconnectedController(ControllerPtr ctl) {
     }
 
     if (!foundController) {
-        Serial.println("게임패드 연결 해제됨, 하지만 myControllers에서 찾을 수 없음");
+        ESP_LOGW(MAIN_TAG, "Gamepad disconnected, but not found in myControllers");
     }
 }
 
@@ -163,7 +166,7 @@ void loadSpeedSettings() {
     }
     EEPROM.commit();
 
-    Serial.printf("로드된 속도 설정: 좌측=%d, 우측=%d\n", leftTrackSpeed, rightTrackSpeed);
+    ESP_LOGI(MAIN_TAG, "Loaded speed settings: left=%d, right=%d", leftTrackSpeed, rightTrackSpeed);
 }
 
 // EEPROM에 속도 값 저장
@@ -171,7 +174,7 @@ void saveSpeedSettings() {
     EEPROM.write(EEPROM_LEFT_SPEED_ADDR, leftTrackSpeed);
     EEPROM.write(EEPROM_RIGHT_SPEED_ADDR, rightTrackSpeed);
     EEPROM.commit();
-    Serial.printf("속도 설정 저장됨: 좌측=%d, 우측=%d\n", leftTrackSpeed, rightTrackSpeed);
+    ESP_LOGI(MAIN_TAG, "Speed settings saved: left=%d, right=%d", leftTrackSpeed, rightTrackSpeed);
 }
 
 // 게임패드 처리 함수
@@ -368,7 +371,7 @@ void processControllers() {
 // 설정 함수
 void setup() {
     Serial.begin(115200);
-    Serial.println("RC 탱크 초기화 중...");
+    ESP_LOGI(MAIN_TAG, "RC Tank Initialization...");
 
     // Brownout을 피하기 위해 CPU 클록을 160 MHz로 낮춤
     setCpuFrequencyMhz(160);
@@ -420,12 +423,12 @@ void setup() {
     BP32.forgetBluetoothKeys();
     BP32.enableVirtualDevice(false);
 
-    Serial.printf("펌웨어 버전: %s\n", BP32.firmwareVersion());
+    ESP_LOGI(MAIN_TAG, "Firmware version: %s", BP32.firmwareVersion());
     const uint8_t* addr = BP32.localBdAddress();
-    Serial.printf("BD 주소: %2X:%2X:%2X:%2X:%2X:%2X\n",
-                 addr[0], addr[1], addr[2], addr[3], addr[4], addr[5]);
+    ESP_LOGI(MAIN_TAG, "BD address: %2X:%2X:%2X:%2X:%2X:%2X",
+             addr[0], addr[1], addr[2], addr[3], addr[4], addr[5]);
 
-    Serial.println("RC 탱크 초기화 완료!");
+    ESP_LOGI(MAIN_TAG, "RC Tank Initialization Complete!");
 }
 
 // 메인 루프
