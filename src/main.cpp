@@ -29,6 +29,9 @@ static const char* MAIN_TAG = "RC_TANK";
 #define TURRET_IN1_PWM_CHANNEL 4
 #define TURRET_IN2_PWM_CHANNEL 5
 
+// DC 모터 최소 속도 임계값 (50 미만은 처리하지 않음)
+#define MOTOR_MIN_SPEED_THRESHOLD 50
+
 // EEPROM 주소
 #define EEPROM_LEFT_SPEED_ADDR 0
 #define EEPROM_RIGHT_SPEED_ADDR 1
@@ -129,6 +132,12 @@ void onDisconnectedController(ControllerPtr ctl) {
 // DC 모터 제어 함수
 void setMotorSpeed(int in1, int in2, int in1PwmChannel, int in2PwmChannel, int speed) {
     ESP_LOGD(MAIN_TAG, "setMotorSpeed IN1:%d IN2:%d Ch1:%d Ch2:%d Speed:%d", in1, in2, in1PwmChannel, in2PwmChannel, speed);
+    
+    // 최소 속도 임계값 적용
+    if (abs(speed) < MOTOR_MIN_SPEED_THRESHOLD) {
+        speed = 0;
+    }
+    
     if (speed > 0) {
         // 정방향 회전
         ledcWrite(in1PwmChannel, speed);
