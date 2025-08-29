@@ -10,9 +10,9 @@
 #define LEFT_TRACK_IN1 25
 #define LEFT_TRACK_IN2 26
 #define RIGHT_TRACK_IN1 27
-#define RIGHT_TRACK_IN2 14
+#define RIGHT_TRACK_IN2 13
 #define TURRET_IN1 12
-#define TURRET_IN2 13
+#define TURRET_IN2 14
 #define LED_PIN 2
 #define HEADLIGHT_PIN 4
 #define CANNON_MOUNT_SERVO_PIN 5   // 포 마운트 서보 모터 핀 (우측 Y축으로 각도 조절)
