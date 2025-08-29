@@ -5,8 +5,8 @@
 #include <EEPROM.h>
 
 // 핀 정의
-#define DFPLAYER_RX 16
-#define DFPLAYER_TX 17
+#define DFPLAYER_RX 32
+#define DFPLAYER_TX 33
 #define LEFT_TRACK_IN1 25
 #define LEFT_TRACK_IN2 26
 #define RIGHT_TRACK_IN1 27

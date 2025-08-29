@@ -18,19 +18,19 @@ Bluepad32를 이용한 게임패드 조작 RC 탱크입니다.
 ### ESP32 핀 연결
 
 | ESP32 핀 | 연결 대상 | 설명 |
-|----------|-----------|------|
-| GPIO 2 | LED | 포신 발사 시 깜빡임 |
-| GPIO 4 | 헤드라이트 LED | 헤드라이트 제어 |
-| GPIO 5 | 포 마운트 서보 모터 | 포 마운트 각도 제어 (우측 Y축) |
+|---------|-----------|------|
+| GPIO 2  | LED | 포신 발사 시 깜빡임 |
+| GPIO 4  | 헤드라이트 LED | 헤드라이트 제어 |
+| GPIO 5  | 포 마운트 서보 모터 | 포 마운트 각도 제어 (우측 Y축) |
 | GPIO 12 | 터렛 모터 IN1 | DRV8833 터렛 제어 |
 | GPIO 13 | 터렛 모터 IN2 | DRV8833 터렛 제어 |
 | GPIO 14 | 우측 트랙 IN2 | DRV8833 우측 트랙 제어 |
-| GPIO 16 | DFPlayer RX | DFPlayer 통신 |
-| GPIO 17 | DFPlayer TX | DFPlayer 통신 |
 | GPIO 18 | 포신 서보 모터 | 포신 당기기 제어 (A 버튼) |
 | GPIO 25 | 좌측 트랙 IN1 | DRV8833 좌측 트랙 제어 |
 | GPIO 26 | 좌측 트랙 IN2 | DRV8833 좌측 트랙 제어 |
 | GPIO 27 | 우측 트랙 IN1 | DRV8833 우측 트랙 제어 |
+| GPIO 33 | DFPlayer TX | DFPlayer 통신 |
+| GPIO 32 | DFPlayer RX | DFPlayer 통신 |
 
 ### DRV8833 모터 드라이버 연결
 
@@ -74,8 +74,8 @@ Bluepad32를 이용한 게임패드 조작 RC 탱크입니다.
 
 ### DFPlayer Mini 연결
 
-- RX → GPIO 16
-- TX → GPIO 17
+- RX → GPIO 33
+- TX → GPIO 32
 - VCC → 5V
 - GND → 공통 접지
 - SPK_1, SPK_2 → 스피커
@@ -146,7 +146,7 @@ sdcard/
 
 ### 효과음이 나오지 않는 경우
 - SD카드 파일명 확인 (0001.mp3, 0002.mp3 등)
-- DFPlayer 연결 확인
+- DFPlayer 연결 확인 (GPIO 32, 33)
 - 볼륨 설정 확인 (코드에서 20으로 설정)
 
 ### 서보 모터가 작동하지 않는 경우
