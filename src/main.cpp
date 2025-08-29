@@ -1,7 +1,7 @@
 #include <Arduino.h>
 #include <Bluepad32.h>
 #include <DFPlayerMini_Fast.h>
-#include <Adafruit_PWMServoDriver.h>
+#include <ESP32Servo.h>
 #include <EEPROM.h>
 
 // 핀 정의
@@ -15,17 +15,12 @@
 #define TURRET_IN2 13
 #define LED_PIN 2
 #define HEADLIGHT_PIN 4
+#define CANNON_SERVO_PIN 5  // 포신 서보 모터 핀
 
 // PWM 채널 정의
 #define LEFT_TRACK_PWM_CHANNEL 0
 #define RIGHT_TRACK_PWM_CHANNEL 1
 #define TURRET_PWM_CHANNEL 2
-
-// 서보 모터 정의
-#define SERVO_FREQ 50
-#define SERVO_MIN_PULSE 500
-#define SERVO_MAX_PULSE 2500
-#define SERVO_CANNON_PIN 0  // PCA9685의 0번 채널
 
 // EEPROM 주소
 #define EEPROM_LEFT_SPEED_ADDR 0
@@ -38,9 +33,11 @@ bool gamepadConnected = false;
 // DFPlayer 관련 변수
 DFPlayerMini_Fast myDFPlayer;
 HardwareSerial DFPlayerSerial(2); // UART2 사용
+unsigned long lastIdleSoundTime = 0;
+const unsigned long idleSoundInterval = 3000; // 3초마다 효과음 1 재생
 
-// PWM 서보 드라이버
-Adafruit_PWMServoDriver pwm = Adafruit_PWMServoDriver();
+// 서보 모터 객체
+Servo cannonServo;
 
 // 모터 제어 변수
 int leftTrackSpeed = 255;  // 기본값
@@ -72,12 +69,12 @@ void onConnectedController(ControllerPtr ctl) {
         if (myControllers[i] == nullptr) {
             Serial.printf("게임패드 연결됨, 인덱스=%d\n", i);
             ControllerProperties properties = ctl->getProperties();
-            Serial.printf("컨트롤러 모델: %s, VID=0x%04x, PID=0x%04x\n",
+            Serial.printf("컨트롤러 모델: %s, VID=0x%04x, PID=0x%04x\n", 
                          ctl->getModelName().c_str(), properties.vendor_id, properties.product_id);
             myControllers[i] = ctl;
             foundEmptySlot = true;
             gamepadConnected = true;
-
+            
             // 게임패드 연결 시 효과음 1 중단
             myDFPlayer.stop();
             break;
@@ -99,7 +96,7 @@ void onDisconnectedController(ControllerPtr ctl) {
             break;
         }
     }
-
+    
     // 모든 게임패드가 연결 해제되었는지 확인
     gamepadConnected = false;
     for (int i = 0; i < BP32_MAX_GAMEPADS; i++) {
@@ -108,12 +105,13 @@ void onDisconnectedController(ControllerPtr ctl) {
             break;
         }
     }
-
+    
     if (!gamepadConnected) {
         // 모든 게임패드가 연결 해제되면 효과음 1 재생 시작
-        myDFPlayer.loop(SOUND_IDLE);
+        myDFPlayer.play(SOUND_IDLE);
+        lastIdleSoundTime = millis();
     }
-
+    
     if (!foundController) {
         Serial.println("게임패드 연결 해제됨, 하지만 myControllers에서 찾을 수 없음");
     }
@@ -138,15 +136,14 @@ void setMotorSpeed(int in1, int in2, int pwmChannel, int speed) {
 
 // 서보 모터 제어 함수
 void setServoAngle(int angle) {
-    int pulse = map(angle, 0, 180, SERVO_MIN_PULSE, SERVO_MAX_PULSE);
-    pwm.setPWM(SERVO_CANNON_PIN, 0, pulse);
+    cannonServo.write(angle);
 }
 
 // EEPROM에서 속도 값 읽기
 void loadSpeedSettings() {
     leftTrackSpeed = EEPROM.read(EEPROM_LEFT_SPEED_ADDR);
     rightTrackSpeed = EEPROM.read(EEPROM_RIGHT_SPEED_ADDR);
-
+    
     // 기본값 설정 (EEPROM이 초기화되지 않은 경우)
     if (leftTrackSpeed == 0 || leftTrackSpeed > 255) {
         leftTrackSpeed = 255;
@@ -157,7 +154,7 @@ void loadSpeedSettings() {
         EEPROM.write(EEPROM_RIGHT_SPEED_ADDR, rightTrackSpeed);
     }
     EEPROM.commit();
-
+    
     Serial.printf("로드된 속도 설정: 좌측=%d, 우측=%d\n", leftTrackSpeed, rightTrackSpeed);
 }
 
@@ -174,15 +171,15 @@ void processGamepad(ControllerPtr ctl) {
     // 좌측 스틱으로 트랙 제어
     int leftStickX = ctl->axisX();
     int leftStickY = ctl->axisY();
-
+    
     // 데드존 설정
     if (abs(leftStickX) < 50) leftStickX = 0;
     if (abs(leftStickY) < 50) leftStickY = 0;
-
+    
     // 좌측 스틱 Y축으로 전진/후진 제어
     int leftTrackSpeed = map(leftStickY, -512, 512, -255, 255);
     int rightTrackSpeed = leftTrackSpeed;
-
+    
     // 좌측 스틱 X축으로 회전 제어
     if (leftStickX != 0) {
         int turnSpeed = map(abs(leftStickX), 0, 512, 0, 255);
@@ -196,11 +193,11 @@ void processGamepad(ControllerPtr ctl) {
             rightTrackSpeed += turnSpeed;
         }
     }
-
+    
     // 속도 제한
     leftTrackSpeed = constrain(leftTrackSpeed, -255, 255);
     rightTrackSpeed = constrain(rightTrackSpeed, -255, 255);
-
+    
     // L1, L2로 좌측 트랙 속도 조절
     if (ctl->l1()) {
         leftTrackSpeed = map(leftTrackSpeed, -255, 255, -leftTrackSpeed, leftTrackSpeed);
@@ -209,7 +206,7 @@ void processGamepad(ControllerPtr ctl) {
         int l2Value = map(ctl->l2(), 0, 1023, 0, 255);
         leftTrackSpeed = map(leftTrackSpeed, -255, 255, -l2Value, l2Value);
     }
-
+    
     // R1, R2로 우측 트랙 속도 조절
     if (ctl->r1()) {
         rightTrackSpeed = map(rightTrackSpeed, -255, 255, -rightTrackSpeed, rightTrackSpeed);
@@ -218,44 +215,44 @@ void processGamepad(ControllerPtr ctl) {
         int r2Value = map(ctl->r2(), 0, 1023, 0, 255);
         rightTrackSpeed = map(rightTrackSpeed, -255, 255, -r2Value, r2Value);
     }
-
+    
     // 모터 제어
     setMotorSpeed(LEFT_TRACK_IN1, LEFT_TRACK_IN2, LEFT_TRACK_PWM_CHANNEL, leftTrackSpeed);
     setMotorSpeed(RIGHT_TRACK_IN1, RIGHT_TRACK_IN2, RIGHT_TRACK_PWM_CHANNEL, rightTrackSpeed);
-
+    
     // 우측 스틱으로 터렛과 포신 제어
     int rightStickX = ctl->axisRX();
     int rightStickY = ctl->axisRY();
-
+    
     // 데드존 설정
     if (abs(rightStickX) < 50) rightStickX = 0;
     if (abs(rightStickY) < 50) rightStickY = 0;
-
+    
     // 우측 스틱 X축으로 터렛 제어
     int turretSpeed = map(rightStickX, -512, 512, -255, 255);
     setMotorSpeed(TURRET_IN1, TURRET_IN2, TURRET_PWM_CHANNEL, turretSpeed);
-
+    
     // 우측 스틱 Y축으로 포신 각도 제어
     if (rightStickY != 0) {
         cannonAngle = map(rightStickY, -512, 512, 0, 180);
         cannonAngle = constrain(cannonAngle, 0, 180);
         setServoAngle(cannonAngle);
     }
-
+    
     // A 버튼으로 포신 발사
     if (ctl->a() && !cannonFiring) {
         cannonFiring = true;
         cannonStartTime = millis();
         ledBlinking = true;
-
+        
         // 포신 당기기
         setServoAngle(45); // 포신을 아래로 당김
-
+        
         // 효과음 2 재생
         myDFPlayer.stop();
         myDFPlayer.play(SOUND_CANNON);
     }
-
+    
     // X 버튼으로 헤드라이트 토글
     static bool xButtonPressed = false;
     if (ctl->x() && !xButtonPressed) {
@@ -265,7 +262,7 @@ void processGamepad(ControllerPtr ctl) {
     } else if (!ctl->x()) {
         xButtonPressed = false;
     }
-
+    
     // L1, L2로 좌측 트랙 속도 설정 저장
     static bool l1Pressed = false, l2Pressed = false;
     if (ctl->l1() && !l1Pressed) {
@@ -275,7 +272,7 @@ void processGamepad(ControllerPtr ctl) {
     } else if (!ctl->l1()) {
         l1Pressed = false;
     }
-
+    
     if (ctl->l2() > 100 && !l2Pressed) {
         leftTrackSpeed = constrain(leftTrackSpeed - 10, 0, 255);
         saveSpeedSettings();
@@ -283,7 +280,7 @@ void processGamepad(ControllerPtr ctl) {
     } else if (ctl->l2() <= 100) {
         l2Pressed = false;
     }
-
+    
     // R1, R2로 우측 트랙 속도 설정 저장
     static bool r1Pressed = false, r2Pressed = false;
     if (ctl->r1() && !r1Pressed) {
@@ -293,7 +290,7 @@ void processGamepad(ControllerPtr ctl) {
     } else if (!ctl->r1()) {
         r1Pressed = false;
     }
-
+    
     if (ctl->r2() > 100 && !r2Pressed) {
         rightTrackSpeed = constrain(rightTrackSpeed - 10, 0, 255);
         saveSpeedSettings();
@@ -312,13 +309,14 @@ void processCannonFiring() {
             cannonFiring = false;
             ledBlinking = false;
             digitalWrite(LED_PIN, LOW);
-
+            
             // 포신을 원래 각도로 복원
             setServoAngle(cannonAngle);
-
+            
             // 효과음 1 재생 재개 (게임패드가 연결되어 있지 않은 경우)
             if (!gamepadConnected) {
-                myDFPlayer.loop(SOUND_IDLE);
+                myDFPlayer.play(SOUND_IDLE);
+                lastIdleSoundTime = millis();
             }
         }
     }
@@ -331,6 +329,17 @@ void processLEDBlinking() {
         if (currentTime - lastBlinkTime >= blinkInterval) {
             digitalWrite(LED_PIN, !digitalRead(LED_PIN));
             lastBlinkTime = currentTime;
+        }
+    }
+}
+
+// 효과음 반복 재생 처리
+void processIdleSound() {
+    if (!gamepadConnected && !cannonFiring) {
+        unsigned long currentTime = millis();
+        if (currentTime - lastIdleSoundTime >= idleSoundInterval) {
+            myDFPlayer.play(SOUND_IDLE);
+            lastIdleSoundTime = currentTime;
         }
     }
 }
@@ -350,10 +359,10 @@ void processControllers() {
 void setup() {
     Serial.begin(115200);
     Serial.println("RC 탱크 초기화 중...");
-
+    
     // EEPROM 초기화
     EEPROM.begin(512);
-
+    
     // 핀 모드 설정
     pinMode(LEFT_TRACK_IN1, OUTPUT);
     pinMode(LEFT_TRACK_IN2, OUTPUT);
@@ -363,46 +372,42 @@ void setup() {
     pinMode(TURRET_IN2, OUTPUT);
     pinMode(LED_PIN, OUTPUT);
     pinMode(HEADLIGHT_PIN, OUTPUT);
-
+    
     // PWM 설정
     ledcSetup(LEFT_TRACK_PWM_CHANNEL, 5000, 8);
     ledcSetup(RIGHT_TRACK_PWM_CHANNEL, 5000, 8);
     ledcSetup(TURRET_PWM_CHANNEL, 5000, 8);
-
+    
     ledcAttachPin(LEFT_TRACK_IN1, LEFT_TRACK_PWM_CHANNEL);
     ledcAttachPin(RIGHT_TRACK_IN1, RIGHT_TRACK_PWM_CHANNEL);
     ledcAttachPin(TURRET_IN1, TURRET_PWM_CHANNEL);
-
-    // PWM 서보 드라이버 초기화
-    pwm.begin();
-    pwm.setOscillatorFrequency(27000000);
-    pwm.setPWMFreq(SERVO_FREQ);
-    delay(10);
-
-    // 서보 모터 초기 위치 설정
-    setServoAngle(cannonAngle);
-
+    
+    // 서보 모터 초기화
+    cannonServo.attach(CANNON_SERVO_PIN);
+    setServoAngle(cannonAngle); // 초기 위치 설정
+    
     // DFPlayer 초기화
     DFPlayerSerial.begin(9600, SERIAL_8N1, DFPLAYER_RX, DFPLAYER_TX);
     myDFPlayer.begin(DFPlayerSerial);
     myDFPlayer.volume(20); // 볼륨 설정 (0-30)
-
+    
     // 효과음 1 재생 시작
-    myDFPlayer.loop(SOUND_IDLE);
-
+    myDFPlayer.play(SOUND_IDLE);
+    lastIdleSoundTime = millis();
+    
     // EEPROM에서 속도 설정 로드
     loadSpeedSettings();
-
+    
     // Bluepad32 설정
     BP32.setup(&onConnectedController, &onDisconnectedController);
     BP32.forgetBluetoothKeys();
     BP32.enableVirtualDevice(false);
-
+    
     Serial.printf("펌웨어 버전: %s\n", BP32.firmwareVersion());
     const uint8_t* addr = BP32.localBdAddress();
-    Serial.printf("BD 주소: %2X:%2X:%2X:%2X:%2X:%2X\n",
+    Serial.printf("BD 주소: %2X:%2X:%2X:%2X:%2X:%2X\n", 
                  addr[0], addr[1], addr[2], addr[3], addr[4], addr[5]);
-
+    
     Serial.println("RC 탱크 초기화 완료!");
 }
 
@@ -413,12 +418,15 @@ void loop() {
     if (dataUpdated) {
         processControllers();
     }
-
+    
     // 포신 발사 처리
     processCannonFiring();
-
+    
     // LED 깜빡임 처리
     processLEDBlinking();
-
+    
+    // 효과음 반복 재생 처리
+    processIdleSound();
+    
     delay(10); // 10ms 딜레이
 }
