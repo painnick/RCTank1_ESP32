@@ -59,6 +59,11 @@ int turretPWM = 0;
 int cannonMountAngle = 90; // 포 마운트 기본 각도 (중앙)
 int cannonAngle = 90;    // 포신 기본 각도 (중앙)
 
+// DC 모터 이전 속도 값 저장 변수
+int prevLeftTrackSpeed = 0;
+int prevRightTrackSpeed = 0;
+int prevTurretSpeed = 0;
+
 // LED 상태
 bool headlightOn = false;
 bool ledBlinking = false;
@@ -129,15 +134,21 @@ void onDisconnectedController(ControllerPtr ctl) {
     }
 }
 
-// DC 모터 제어 함수
-void setMotorSpeed(int in1, int in2, int in1PwmChannel, int in2PwmChannel, int speed) {
-    ESP_LOGD(MAIN_TAG, "setMotorSpeed IN1:%d IN2:%d Ch1:%d Ch2:%d Speed:%d", in1, in2, in1PwmChannel, in2PwmChannel, speed);
-    
+// DC 모터 제어 함수 (속도 변화가 없으면 호출 무시)
+void setMotorSpeed(int in1, int in2, int in1PwmChannel, int in2PwmChannel, int speed, int* prevSpeed) {
     // 최소 속도 임계값 적용
     if (abs(speed) < MOTOR_MIN_SPEED_THRESHOLD) {
         speed = 0;
     }
-    
+
+    // 속도 변화가 없으면 호출 무시
+    if (speed == *prevSpeed) {
+        return;
+    }
+
+    ESP_LOGD(MAIN_TAG, "setMotorSpeed IN1:%d IN2:%d Ch1:%d Ch2:%d Speed:%d (prev:%d)",
+             in1, in2, in1PwmChannel, in2PwmChannel, speed, *prevSpeed);
+
     if (speed > 0) {
         // 정방향 회전
         ledcWrite(in1PwmChannel, speed);
@@ -151,6 +162,9 @@ void setMotorSpeed(int in1, int in2, int in1PwmChannel, int in2PwmChannel, int s
         ledcWrite(in1PwmChannel, 0);
         ledcWrite(in2PwmChannel, 0);
     }
+
+    // 현재 속도를 이전 속도로 저장
+    *prevSpeed = speed;
 }
 
 // 포 마운트 서보 모터 제어 함수
@@ -241,8 +255,8 @@ void processGamepad(ControllerPtr ctl) {
     }
 
     // 모터 제어
-    setMotorSpeed(LEFT_TRACK_IN1, LEFT_TRACK_IN2, LEFT_TRACK_IN1_PWM_CHANNEL, LEFT_TRACK_IN2_PWM_CHANNEL, leftTrackSpeed);
-    setMotorSpeed(RIGHT_TRACK_IN1, RIGHT_TRACK_IN2, RIGHT_TRACK_IN1_PWM_CHANNEL, RIGHT_TRACK_IN2_PWM_CHANNEL, rightTrackSpeed);
+    setMotorSpeed(LEFT_TRACK_IN1, LEFT_TRACK_IN2, LEFT_TRACK_IN1_PWM_CHANNEL, LEFT_TRACK_IN2_PWM_CHANNEL, leftTrackSpeed, &prevLeftTrackSpeed);
+    setMotorSpeed(RIGHT_TRACK_IN1, RIGHT_TRACK_IN2, RIGHT_TRACK_IN1_PWM_CHANNEL, RIGHT_TRACK_IN2_PWM_CHANNEL, rightTrackSpeed, &prevRightTrackSpeed);
 
     // 우측 스틱으로 터렛과 포 마운트 제어
     int rightStickX = ctl->axisRX();
@@ -254,7 +268,7 @@ void processGamepad(ControllerPtr ctl) {
 
     // 우측 스틱 X축으로 터렛 제어
     int turretSpeed = map(rightStickX, -512, 512, -255, 255);
-    setMotorSpeed(TURRET_IN1, TURRET_IN2, TURRET_IN1_PWM_CHANNEL, TURRET_IN2_PWM_CHANNEL, turretSpeed);
+    setMotorSpeed(TURRET_IN1, TURRET_IN2, TURRET_IN1_PWM_CHANNEL, TURRET_IN2_PWM_CHANNEL, turretSpeed, &prevTurretSpeed);
 
     // 우측 스틱 Y축으로 포 마운트 각도 제어
     if (rightStickY != 0) {
@@ -421,9 +435,9 @@ void setup() {
     ledcAttachPin(TURRET_IN1, TURRET_IN1_PWM_CHANNEL);
     ledcAttachPin(TURRET_IN2, TURRET_IN2_PWM_CHANNEL);
 
-    setMotorSpeed(LEFT_TRACK_IN1, LEFT_TRACK_IN2, LEFT_TRACK_IN1_PWM_CHANNEL, LEFT_TRACK_IN2_PWM_CHANNEL, 0);
-    setMotorSpeed(RIGHT_TRACK_IN1, RIGHT_TRACK_IN2, RIGHT_TRACK_IN1_PWM_CHANNEL, RIGHT_TRACK_IN2_PWM_CHANNEL, 0);
-    setMotorSpeed(TURRET_IN1, TURRET_IN2, TURRET_IN1_PWM_CHANNEL, TURRET_IN2_PWM_CHANNEL, 0);
+    setMotorSpeed(LEFT_TRACK_IN1, LEFT_TRACK_IN2, LEFT_TRACK_IN1_PWM_CHANNEL, LEFT_TRACK_IN2_PWM_CHANNEL, 0, &prevLeftTrackSpeed);
+    setMotorSpeed(RIGHT_TRACK_IN1, RIGHT_TRACK_IN2, RIGHT_TRACK_IN1_PWM_CHANNEL, RIGHT_TRACK_IN2_PWM_CHANNEL, 0, &prevRightTrackSpeed);
+    setMotorSpeed(TURRET_IN1, TURRET_IN2, TURRET_IN1_PWM_CHANNEL, TURRET_IN2_PWM_CHANNEL, 0, &prevTurretSpeed);
 
     // 서보 모터 초기화
     cannonMountServo.attach(CANNON_MOUNT_SERVO_PIN);  // 포 마운트 서보 모터
