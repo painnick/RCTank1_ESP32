@@ -260,7 +260,6 @@ void processGamepad(ControllerPtr ctl) {
         setCannonAngle(45); // 포신을 아래로 당김
 
         // 효과음 2 재생
-        myDFPlayer.stop();
         myDFPlayer.play(SOUND_CANNON);
     }
 
