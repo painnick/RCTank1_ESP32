@@ -371,6 +371,9 @@ void setup() {
     Serial.begin(115200);
     Serial.println("RC 탱크 초기화 중...");
 
+    // Brownout을 피하기 위해 CPU 클록을 160 MHz로 낮춤
+    setCpuFrequencyMhz(160);
+
     // EEPROM 초기화
     EEPROM.begin(512);
 
