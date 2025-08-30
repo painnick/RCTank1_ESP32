@@ -22,10 +22,10 @@ static const char* MAIN_TAG = "RC_TANK";
 #define CANNON_MOUNT_SERVO_PIN 5   // 포 마운트 서보 모터 핀 (우측 Y축으로 각도 조절)
 #define CANNON_SERVO_PIN 18     // 포신 서보 모터 핀 (A 버튼으로 당기기)
 
-// MCPWM 유닛 및 타이머 정의
+// MCPWM 유닛 및 타이머 정의 (모든 Unit은 MCPWM_UNIT_0 사용)
 #define LEFT_TRACK_MCPWM_UNIT MCPWM_UNIT_0
 #define RIGHT_TRACK_MCPWM_UNIT MCPWM_UNIT_0
-#define TURRET_MCPWM_UNIT MCPWM_UNIT_1
+#define TURRET_MCPWM_UNIT MCPWM_UNIT_0
 
 #define LEFT_TRACK_MCPWM_TIMER MCPWM_TIMER_0
 #define RIGHT_TRACK_MCPWM_TIMER MCPWM_TIMER_1
@@ -472,17 +472,17 @@ void setup() {
     pwm_config.counter_mode = MCPWM_UP_COUNTER;
     pwm_config.duty_mode = MCPWM_DUTY_MODE_0;
 
-    // 좌측 트랙 MCPWM 설정
+    // 좌측 트랙 MCPWM 설정 (MCPWM_UNIT_0, MCPWM_TIMER_0)
     mcpwm_init(LEFT_TRACK_MCPWM_UNIT, LEFT_TRACK_MCPWM_TIMER, &pwm_config);
     mcpwm_gpio_init(LEFT_TRACK_MCPWM_UNIT, MCPWM0A, LEFT_TRACK_IN1);
     mcpwm_gpio_init(LEFT_TRACK_MCPWM_UNIT, MCPWM0B, LEFT_TRACK_IN2);
 
-    // 우측 트랙 MCPWM 설정 (다른 유닛 사용)
+    // 우측 트랙 MCPWM 설정 (MCPWM_UNIT_0, MCPWM_TIMER_1)
     mcpwm_init(RIGHT_TRACK_MCPWM_UNIT, RIGHT_TRACK_MCPWM_TIMER, &pwm_config);
-    mcpwm_gpio_init(RIGHT_TRACK_MCPWM_UNIT, MCPWM0A, RIGHT_TRACK_IN1);
-    mcpwm_gpio_init(RIGHT_TRACK_MCPWM_UNIT, MCPWM0B, RIGHT_TRACK_IN2);
+    mcpwm_gpio_init(RIGHT_TRACK_MCPWM_UNIT, MCPWM1A, RIGHT_TRACK_IN1);
+    mcpwm_gpio_init(RIGHT_TRACK_MCPWM_UNIT, MCPWM1B, RIGHT_TRACK_IN2);
 
-    // 터렛 MCPWM 설정 (LEFT_TRACK와 같은 유닛, 다른 타이머 사용)
+    // 터렛 MCPWM 설정 (MCPWM_UNIT_0, MCPWM_TIMER_2)
     mcpwm_init(TURRET_MCPWM_UNIT, TURRET_MCPWM_TIMER, &pwm_config);
     mcpwm_gpio_init(TURRET_MCPWM_UNIT, MCPWM2A, TURRET_IN1);
     mcpwm_gpio_init(TURRET_MCPWM_UNIT, MCPWM2B, TURRET_IN2);
