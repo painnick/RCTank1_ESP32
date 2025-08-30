@@ -53,8 +53,8 @@ Servo cannonMountServo;  // 포 마운트 서보 모터
 Servo cannonServo;     // 포신 서보 모터
 
 // 모터 제어 변수
-int leftTrackSpeed = 255;  // 기본값
-int rightTrackSpeed = 255; // 기본값
+float leftTrackMultiplier = 1.0;  // 좌측 트랙 속도 배율 (0.1~2.0)
+float rightTrackMultiplier = 1.0; // 우측 트랙 속도 배율 (0.1~2.0)
 int leftTrackPWM = 0;
 int rightTrackPWM = 0;
 int turretPWM = 0;
@@ -186,31 +186,40 @@ void setCannonAngle(int angle) {
     cannonServo.write(angle);
 }
 
-// EEPROM에서 속도 값 읽기
+// EEPROM에서 속도 배율 값 읽기
 void loadSpeedSettings() {
-    leftTrackSpeed = EEPROM.read(EEPROM_LEFT_SPEED_ADDR);
-    rightTrackSpeed = EEPROM.read(EEPROM_RIGHT_SPEED_ADDR);
+    // EEPROM에서 배율 값을 읽기 (0.1~2.0 범위를 10~200으로 저장)
+    int leftMultiplierInt = EEPROM.read(EEPROM_LEFT_SPEED_ADDR);
+    int rightMultiplierInt = EEPROM.read(EEPROM_RIGHT_SPEED_ADDR);
 
     // 기본값 설정 (EEPROM이 초기화되지 않은 경우)
-    if (leftTrackSpeed == 0 || leftTrackSpeed > 255) {
-        leftTrackSpeed = 255;
-        EEPROM.write(EEPROM_LEFT_SPEED_ADDR, leftTrackSpeed);
+    if (leftMultiplierInt == 0 || leftMultiplierInt > 200) {
+        leftMultiplierInt = 100; // 1.0을 100으로 저장
+        EEPROM.write(EEPROM_LEFT_SPEED_ADDR, leftMultiplierInt);
     }
-    if (rightTrackSpeed == 0 || rightTrackSpeed > 255) {
-        rightTrackSpeed = 255;
-        EEPROM.write(EEPROM_RIGHT_SPEED_ADDR, rightTrackSpeed);
+    if (rightMultiplierInt == 0 || rightMultiplierInt > 200) {
+        rightMultiplierInt = 100; // 1.0을 100으로 저장
+        EEPROM.write(EEPROM_RIGHT_SPEED_ADDR, rightMultiplierInt);
     }
     EEPROM.commit();
 
-    ESP_LOGI(MAIN_TAG, "Loaded speed settings: left=%d, right=%d", leftTrackSpeed, rightTrackSpeed);
+    // 정수 값을 배율로 변환 (100 = 1.0)
+    leftTrackMultiplier = leftMultiplierInt / 100.0;
+    rightTrackMultiplier = rightMultiplierInt / 100.0;
+
+    ESP_LOGI(MAIN_TAG, "Loaded speed multipliers: left=%.1f, right=%.1f", leftTrackMultiplier, rightTrackMultiplier);
 }
 
-// EEPROM에 속도 값 저장
+// EEPROM에 속도 배율 값 저장
 void saveSpeedSettings() {
-    EEPROM.write(EEPROM_LEFT_SPEED_ADDR, leftTrackSpeed);
-    EEPROM.write(EEPROM_RIGHT_SPEED_ADDR, rightTrackSpeed);
+    // 배율을 정수로 변환하여 저장 (1.0 = 100)
+    int leftMultiplierInt = (int)(leftTrackMultiplier * 100);
+    int rightMultiplierInt = (int)(rightTrackMultiplier * 100);
+
+    EEPROM.write(EEPROM_LEFT_SPEED_ADDR, leftMultiplierInt);
+    EEPROM.write(EEPROM_RIGHT_SPEED_ADDR, rightMultiplierInt);
     EEPROM.commit();
-    ESP_LOGI(MAIN_TAG, "Speed settings saved: left=%d, right=%d", leftTrackSpeed, rightTrackSpeed);
+    ESP_LOGI(MAIN_TAG, "Speed multipliers saved: left=%.1f, right=%.1f", leftTrackMultiplier, rightTrackMultiplier);
 }
 
 // 게임패드 처리 함수
@@ -223,7 +232,7 @@ void processGamepad(ControllerPtr ctl) {
     if (abs(leftStickY) < 50) leftStickY = 0;
     if (abs(rightStickY) < 50) rightStickY = 0;
 
-    // 좌측 스틱 Y축으로 좌측 트랙 전후진 제어
+        // 좌측 스틱 Y축으로 좌측 트랙 전후진 제어
     int leftTrackSpeed = map(leftStickY, -512, 512, -255, 255);
 
     // 우측 스틱 Y축으로 우측 트랙 전후진 제어
@@ -233,23 +242,13 @@ void processGamepad(ControllerPtr ctl) {
     leftTrackSpeed = constrain(leftTrackSpeed, -255, 255);
     rightTrackSpeed = constrain(rightTrackSpeed, -255, 255);
 
-    // L1, L2로 좌측 트랙 속도 조절
-    if (ctl->l1()) {
-        leftTrackSpeed = map(leftTrackSpeed, -255, 255, -leftTrackSpeed, leftTrackSpeed);
-    }
-    if (ctl->l2() > 100) {
-        int l2Value = map(ctl->l2(), 0, 1023, 0, 255);
-        leftTrackSpeed = map(leftTrackSpeed, -255, 255, -l2Value, l2Value);
-    }
+    // 배율 적용
+    leftTrackSpeed = (int)(leftTrackSpeed * leftTrackMultiplier);
+    rightTrackSpeed = (int)(rightTrackSpeed * rightTrackMultiplier);
 
-    // R1, R2로 우측 트랙 속도 조절
-    if (ctl->r1()) {
-        rightTrackSpeed = map(rightTrackSpeed, -255, 255, -rightTrackSpeed, rightTrackSpeed);
-    }
-    if (ctl->r2() > 100) {
-        int r2Value = map(ctl->r2(), 0, 1023, 0, 255);
-        rightTrackSpeed = map(rightTrackSpeed, -255, 255, -r2Value, r2Value);
-    }
+    // 최종 속도 제한
+    leftTrackSpeed = constrain(leftTrackSpeed, -255, 255);
+    rightTrackSpeed = constrain(rightTrackSpeed, -255, 255);
 
     // 모터 제어
     setMotorSpeed(LEFT_TRACK_IN1, LEFT_TRACK_IN2, LEFT_TRACK_MCPWM_UNIT, LEFT_TRACK_MCPWM_TIMER, leftTrackSpeed, &prevLeftTrackSpeed);
@@ -313,38 +312,38 @@ void processGamepad(ControllerPtr ctl) {
         r1ButtonPressed = false;
     }
 
-    // Y 버튼 + D-PAD Y축으로 좌측 트랙 속도 설정
+        // Y 버튼 + D-PAD Y축으로 좌측 트랙 속도 배율 설정
     static bool yButtonPressed = false;
     if (ctl->y()) {
         if (!yButtonPressed) {
             yButtonPressed = true;
         }
 
-        // D-PAD 상하로 좌측 트랙 속도 조절
+        // D-PAD 상하로 좌측 트랙 속도 배율 조절 (0.1~2.0)
         if (ctl->dpad() == DPAD_UP) {
-            leftTrackSpeed = constrain(leftTrackSpeed + 5, 0, 255);
+            leftTrackMultiplier = constrain(leftTrackMultiplier + 0.02, 0.1, 2.0);
             saveSpeedSettings();
         } else if (ctl->dpad() == DPAD_DOWN) {
-            leftTrackSpeed = constrain(leftTrackSpeed - 5, 0, 255);
+            leftTrackMultiplier = constrain(leftTrackMultiplier - 0.02, 0.1, 2.0);
             saveSpeedSettings();
         }
     } else {
         yButtonPressed = false;
     }
 
-    // X 버튼 + D-PAD Y축으로 우측 트랙 속도 설정
+    // X 버튼 + D-PAD Y축으로 우측 트랙 속도 배율 설정
     static bool xButtonPressed = false;
     if (ctl->x()) {
         if (!xButtonPressed) {
             xButtonPressed = true;
         }
 
-        // D-PAD 상하로 우측 트랙 속도 조절
+        // D-PAD 상하로 우측 트랙 속도 배율 조절 (0.1~2.0)
         if (ctl->dpad() == DPAD_UP) {
-            rightTrackSpeed = constrain(rightTrackSpeed + 5, 0, 255);
+            rightTrackMultiplier = constrain(rightTrackMultiplier + 0.02, 0.1, 2.0);
             saveSpeedSettings();
         } else if (ctl->dpad() == DPAD_DOWN) {
-            rightTrackSpeed = constrain(rightTrackSpeed - 5, 0, 255);
+            rightTrackMultiplier = constrain(rightTrackMultiplier - 0.02, 0.1, 2.0);
             saveSpeedSettings();
         }
     } else {
