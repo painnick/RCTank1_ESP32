@@ -80,7 +80,7 @@ const unsigned long cannonDuration = 500; // 500ms 동안 포신 당김
 // 기관총 발사 관련 변수
 bool machinegunFiring = false;
 unsigned long machinegunStartTime = 0;
-const unsigned long machinegunDuration = 3000; // 3초간 기관총 발사
+const unsigned long machinegunDuration = 1000; // 1초간 기관총 발사
 
 // 효과음 파일 번호
 #define SOUND_IDLE 1
@@ -296,7 +296,7 @@ void processGamepad(ControllerPtr ctl) {
         ledBlinking = true;
 
         // 게임 패드 진동
-        ctl->playDualRumble(0, 200, 0xFF , 0x0);
+        ctl->playDualRumble(0, 300, 0xFF , 0x0);
 
         // 효과음 3 재생
         myDFPlayer.play(SOUND_MACHINEGUN);
