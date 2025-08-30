@@ -258,18 +258,18 @@ void processGamepad(ControllerPtr ctl) {
     // D-PAD로 터렛과 포 마운트 제어
     // D-PAD 좌우로 터렛 제어
     int turretSpeed = 0;
-    if (ctl->dpadLeft()) {
+    if (ctl->dpad() == DPAD_LEFT) {
         turretSpeed = -255; // 좌측 회전
-    } else if (ctl->dpadRight()) {
+    } else if (ctl->dpad() == DPAD_RIGHT) {
         turretSpeed = 255;  // 우측 회전
     }
     setMotorSpeed(TURRET_IN1, TURRET_IN2, TURRET_MCPWM_UNIT, TURRET_MCPWM_TIMER, turretSpeed, &prevTurretSpeed);
 
     // D-PAD 상하로 포 마운트 각도 제어
-    if (ctl->dpadUp()) {
+    if (ctl->dpad() == DPAD_UP) {
         cannonMountAngle = constrain(cannonMountAngle + 2, 0, 180); // 위로 올림
         setCannonMountAngle(cannonMountAngle);
-    } else if (ctl->dpadDown()) {
+    } else if (ctl->dpad() == DPAD_DOWN) {
         cannonMountAngle = constrain(cannonMountAngle - 2, 0, 180); // 아래로 내림
         setCannonMountAngle(cannonMountAngle);
     }
