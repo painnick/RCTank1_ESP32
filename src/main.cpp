@@ -15,12 +15,12 @@ static const char* MAIN_TAG = "RC_TANK";
 #define LEFT_TRACK_IN2 26
 #define RIGHT_TRACK_IN1 27
 #define RIGHT_TRACK_IN2 13
-#define TURRET_IN1 21
-#define TURRET_IN2 22
-#define LED_PIN 2
-#define HEADLIGHT_PIN 4
+#define TURRET_IN1 22
+#define TURRET_IN2 21
+#define CANNON_LED_PIN 4
+#define HEADLIGHT_PIN 16
 #define CANNON_MOUNT_SERVO_PIN 19   // 포 마운트 서보 모터 핀 (우측 Y축으로 각도 조절)
-#define CANNON_SERVO_PIN 23     // 포신 서보 모터 핀 (A 버튼으로 당기기)
+#define CANNON_SERVO_PIN 18     // 포신 서보 모터 핀 (A 버튼으로 당기기)
 
 // MCPWM 유닛 및 타이머 정의 (모든 Unit은 MCPWM_UNIT_0 사용)
 #define LEFT_TRACK_MCPWM_UNIT MCPWM_UNIT_0
@@ -362,7 +362,7 @@ void processCannonFiring() {
             // 기관총이 발사 중이 아닌 경우에만 LED 점멸 중단
             if (!machinegunFiring) {
                 ledBlinking = false;
-                digitalWrite(LED_PIN, LOW);
+                digitalWrite(CANNON_LED_PIN, LOW);
             }
 
             // 포신을 원래 각도로 복원
@@ -388,7 +388,7 @@ void processMachinegunFiring() {
             // 포신이 발사 중이 아닌 경우에만 LED 점멸 중단
             if (!cannonFiring) {
                 ledBlinking = false;
-                digitalWrite(LED_PIN, LOW);
+                digitalWrite(CANNON_LED_PIN, LOW);
             }
 
             // 효과음 1 재생 재개 (게임패드가 연결되어 있지 않은 경우)
@@ -408,13 +408,13 @@ void processLEDBlinking() {
         // 기관총 발사 중일 때는 500ms 간격으로 점멸
         if (machinegunFiring) {
             if (currentTime - lastBlinkTime >= 500) {
-                digitalWrite(LED_PIN, !digitalRead(LED_PIN));
+                digitalWrite(CANNON_LED_PIN, !digitalRead(CANNON_LED_PIN));
                 lastBlinkTime = currentTime;
             }
         } else {
             // 포신 발사 중일 때는 기존 100ms 간격으로 점멸
             if (currentTime - lastBlinkTime >= blinkInterval) {
-                digitalWrite(LED_PIN, !digitalRead(LED_PIN));
+                digitalWrite(CANNON_LED_PIN, !digitalRead(CANNON_LED_PIN));
                 lastBlinkTime = currentTime;
             }
         }
@@ -461,7 +461,7 @@ void setup() {
     pinMode(RIGHT_TRACK_IN2, OUTPUT);
     pinMode(TURRET_IN1, OUTPUT);
     pinMode(TURRET_IN2, OUTPUT);
-    pinMode(LED_PIN, OUTPUT);
+    pinMode(CANNON_LED_PIN, OUTPUT);
     pinMode(HEADLIGHT_PIN, OUTPUT);
 
     // MCPWM 설정
