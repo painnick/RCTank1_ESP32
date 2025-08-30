@@ -273,8 +273,8 @@ void processGamepad(ControllerPtr ctl) {
         setCannonMountAngle(cannonMountAngle);
     }
 
-    // A 버튼으로 포신 발사
-    if (ctl->a() && !cannonFiring && !machinegunFiring) {
+    // B 버튼으로 포신 발사 (A/B 버튼이 뒤바뀜)
+    if (ctl->b() && !cannonFiring && !machinegunFiring) {
         cannonFiring = true;
         cannonStartTime = millis();
         ledBlinking = true;
@@ -289,8 +289,8 @@ void processGamepad(ControllerPtr ctl) {
         myDFPlayer.play(SOUND_CANNON);
     }
 
-    // B 버튼으로 기관총 발사
-    if (ctl->b() && !machinegunFiring && !cannonFiring) {
+    // A 버튼으로 기관총 발사 (A/B 버튼이 뒤바뀜)
+    if (ctl->a() && !machinegunFiring && !cannonFiring) {
         machinegunFiring = true;
         machinegunStartTime = millis();
         ledBlinking = true;
@@ -312,13 +312,13 @@ void processGamepad(ControllerPtr ctl) {
         r1ButtonPressed = false;
     }
 
-        // Y 버튼 + D-PAD Y축으로 좌측 트랙 속도 배율 설정
-    static bool yButtonPressed = false;
-    if (ctl->y()) {
-        if (!yButtonPressed) {
-            yButtonPressed = true;
+            // X 버튼 + D-PAD Y축으로 좌측 트랙 속도 배율 설정 (X/Y 버튼이 뒤바뀜)
+    static bool xButtonPressed = false;
+    if (ctl->x()) {
+        if (!xButtonPressed) {
+            xButtonPressed = true;
         }
-
+        
         // D-PAD 상하로 좌측 트랙 속도 배율 조절 (0.1~2.0)
         if (ctl->dpad() == DPAD_UP) {
             leftTrackMultiplier = constrain(leftTrackMultiplier + 0.02, 0.1, 2.0);
@@ -328,16 +328,16 @@ void processGamepad(ControllerPtr ctl) {
             saveSpeedSettings();
         }
     } else {
-        yButtonPressed = false;
+        xButtonPressed = false;
     }
 
-    // X 버튼 + D-PAD Y축으로 우측 트랙 속도 배율 설정
-    static bool xButtonPressed = false;
-    if (ctl->x()) {
-        if (!xButtonPressed) {
-            xButtonPressed = true;
+    // Y 버튼 + D-PAD Y축으로 우측 트랙 속도 배율 설정 (X/Y 버튼이 뒤바뀜)
+    static bool yButtonPressed = false;
+    if (ctl->y()) {
+        if (!yButtonPressed) {
+            yButtonPressed = true;
         }
-
+        
         // D-PAD 상하로 우측 트랙 속도 배율 조절 (0.1~2.0)
         if (ctl->dpad() == DPAD_UP) {
             rightTrackMultiplier = constrain(rightTrackMultiplier + 0.02, 0.1, 2.0);
@@ -347,7 +347,7 @@ void processGamepad(ControllerPtr ctl) {
             saveSpeedSettings();
         }
     } else {
-        xButtonPressed = false;
+        yButtonPressed = false;
     }
 }
 
