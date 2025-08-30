@@ -86,6 +86,7 @@ const unsigned long machinegunDuration = 3000; // 3초간 기관총 발사
 #define SOUND_IDLE 1
 #define SOUND_CANNON 2
 #define SOUND_MACHINEGUN 3
+#define SOUND_CONNECTED 4
 
 // 게임패드 연결 콜백
 void onConnectedController(ControllerPtr ctl) {
@@ -100,8 +101,8 @@ void onConnectedController(ControllerPtr ctl) {
             foundEmptySlot = true;
             gamepadConnected = true;
 
-            // 게임패드 연결 시 효과음 1 중단
-            myDFPlayer.stop();
+            // 게임패드 연결 시 효과음 4 재생
+            myDFPlayer.play(SOUND_CONNECTED);
             break;
         }
     }
