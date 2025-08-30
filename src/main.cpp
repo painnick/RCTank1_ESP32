@@ -225,7 +225,7 @@ void processGamepad(ControllerPtr ctl) {
 
     // 좌측 스틱 Y축으로 좌측 트랙 전후진 제어
     int leftTrackSpeed = map(leftStickY, -512, 512, -255, 255);
-    
+
     // 우측 스틱 Y축으로 우측 트랙 전후진 제어
     int rightTrackSpeed = map(rightStickY, -512, 512, -255, 255);
 
@@ -303,50 +303,52 @@ void processGamepad(ControllerPtr ctl) {
         myDFPlayer.play(SOUND_MACHINEGUN);
     }
 
-    // X 버튼으로 헤드라이트 토글
-    static bool xButtonPressed = false;
-    if (ctl->x() && !xButtonPressed) {
+    // R1 버튼으로 헤드라이트 토글
+    static bool r1ButtonPressed = false;
+    if (ctl->r1() && !r1ButtonPressed) {
         headlightOn = !headlightOn;
         digitalWrite(HEADLIGHT_PIN, headlightOn ? HIGH : LOW);
-        xButtonPressed = true;
-    } else if (!ctl->x()) {
-        xButtonPressed = false;
-    }
-
-    // L1, L2로 좌측 트랙 속도 설정 저장
-    static bool l1Pressed = false, l2Pressed = false;
-    if (ctl->l1() && !l1Pressed) {
-        leftTrackSpeed = constrain(leftTrackSpeed + 10, 0, 255);
-        saveSpeedSettings();
-        l1Pressed = true;
-    } else if (!ctl->l1()) {
-        l1Pressed = false;
-    }
-
-    if (ctl->l2() > 100 && !l2Pressed) {
-        leftTrackSpeed = constrain(leftTrackSpeed - 10, 0, 255);
-        saveSpeedSettings();
-        l2Pressed = true;
-    } else if (ctl->l2() <= 100) {
-        l2Pressed = false;
-    }
-
-    // R1, R2로 우측 트랙 속도 설정 저장
-    static bool r1Pressed = false, r2Pressed = false;
-    if (ctl->r1() && !r1Pressed) {
-        rightTrackSpeed = constrain(rightTrackSpeed + 10, 0, 255);
-        saveSpeedSettings();
-        r1Pressed = true;
+        r1ButtonPressed = true;
     } else if (!ctl->r1()) {
-        r1Pressed = false;
+        r1ButtonPressed = false;
     }
 
-    if (ctl->r2() > 100 && !r2Pressed) {
-        rightTrackSpeed = constrain(rightTrackSpeed - 10, 0, 255);
-        saveSpeedSettings();
-        r2Pressed = true;
-    } else if (ctl->r2() <= 100) {
-        r2Pressed = false;
+    // Y 버튼 + D-PAD Y축으로 좌측 트랙 속도 설정
+    static bool yButtonPressed = false;
+    if (ctl->y()) {
+        if (!yButtonPressed) {
+            yButtonPressed = true;
+        }
+
+        // D-PAD 상하로 좌측 트랙 속도 조절
+        if (ctl->dpad() == DPAD_UP) {
+            leftTrackSpeed = constrain(leftTrackSpeed + 5, 0, 255);
+            saveSpeedSettings();
+        } else if (ctl->dpad() == DPAD_DOWN) {
+            leftTrackSpeed = constrain(leftTrackSpeed - 5, 0, 255);
+            saveSpeedSettings();
+        }
+    } else {
+        yButtonPressed = false;
+    }
+
+    // X 버튼 + D-PAD Y축으로 우측 트랙 속도 설정
+    static bool xButtonPressed = false;
+    if (ctl->x()) {
+        if (!xButtonPressed) {
+            xButtonPressed = true;
+        }
+
+        // D-PAD 상하로 우측 트랙 속도 조절
+        if (ctl->dpad() == DPAD_UP) {
+            rightTrackSpeed = constrain(rightTrackSpeed + 5, 0, 255);
+            saveSpeedSettings();
+        } else if (ctl->dpad() == DPAD_DOWN) {
+            rightTrackSpeed = constrain(rightTrackSpeed - 5, 0, 255);
+            saveSpeedSettings();
+        }
+    } else {
+        xButtonPressed = false;
     }
 }
 
@@ -357,7 +359,7 @@ void processCannonFiring() {
         if (currentTime - cannonStartTime >= cannonDuration) {
             // 포신 발사 완료
             cannonFiring = false;
-            
+
             // 기관총이 발사 중이 아닌 경우에만 LED 점멸 중단
             if (!machinegunFiring) {
                 ledBlinking = false;
@@ -383,7 +385,7 @@ void processMachinegunFiring() {
         if (currentTime - machinegunStartTime >= machinegunDuration) {
             // 기관총 발사 완료
             machinegunFiring = false;
-            
+
             // 포신이 발사 중이 아닌 경우에만 LED 점멸 중단
             if (!cannonFiring) {
                 ledBlinking = false;
@@ -403,7 +405,7 @@ void processMachinegunFiring() {
 void processLEDBlinking() {
     if (ledBlinking) {
         unsigned long currentTime = millis();
-        
+
         // 기관총 발사 중일 때는 500ms 간격으로 점멸
         if (machinegunFiring) {
             if (currentTime - lastBlinkTime >= 500) {
