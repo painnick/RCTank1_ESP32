@@ -15,12 +15,12 @@ static const char* MAIN_TAG = "RC_TANK";
 #define LEFT_TRACK_IN2 26
 #define RIGHT_TRACK_IN1 27
 #define RIGHT_TRACK_IN2 13
-#define TURRET_IN1 12
-#define TURRET_IN2 14
+#define TURRET_IN1 21
+#define TURRET_IN2 22
 #define LED_PIN 2
 #define HEADLIGHT_PIN 4
-#define CANNON_MOUNT_SERVO_PIN 5   // 포 마운트 서보 모터 핀 (우측 Y축으로 각도 조절)
-#define CANNON_SERVO_PIN 18     // 포신 서보 모터 핀 (A 버튼으로 당기기)
+#define CANNON_MOUNT_SERVO_PIN 19   // 포 마운트 서보 모터 핀 (우측 Y축으로 각도 조절)
+#define CANNON_SERVO_PIN 23     // 포신 서보 모터 핀 (A 버튼으로 당기기)
 
 // MCPWM 유닛 및 타이머 정의 (모든 Unit은 MCPWM_UNIT_0 사용)
 #define LEFT_TRACK_MCPWM_UNIT MCPWM_UNIT_0
