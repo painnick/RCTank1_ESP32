@@ -44,9 +44,10 @@ typedef struct {
 #define EEPROM_LEFT_SPEED_ADDR 0
 #define EEPROM_RIGHT_SPEED_ADDR 1
 #define EEPROM_BUTTON_SWAP_FLAG_ADDR 2
+#define EEPROM_VOLUME_ADDR 4
 
 // EEPROM 초기화 플래그
-#define EEPROM_INIT_FLAG_ADDR 3
+#define EEPROM_INIT_FLAG_ADDR 5
 
 // 게임패드 관련 변수
 ControllerPtr myControllers[BP32_MAX_GAMEPADS];
@@ -73,6 +74,11 @@ int cannonAngle = 90; // 포신 기본 각도 (중앙)
 
 // 버튼 스왑 설정
 bool buttonSwapEnabled = false; // A/B, X/Y 버튼 스왑 여부
+
+// 볼륨 제어 변수
+int currentVolume = 20; // 현재 볼륨 (0-30)
+int tempVolume = 20; // 임시 볼륨 (버튼을 누르고 있는 동안 사용)
+bool volumeChanged = false; // 볼륨이 변경되었는지 확인
 
 // DC 모터 이전 속도 값 저장 변수
 int prevLeftTrackSpeed = 0;
@@ -276,6 +282,30 @@ void saveButtonSwapSettings() {
   ESP_LOGI(MAIN_TAG, "Button swap setting saved: %s", buttonSwapEnabled ? "enabled" : "disabled");
 }
 
+// 볼륨 설정 저장
+void saveVolumeSettings() {
+  EEPROM.write(EEPROM_VOLUME_ADDR, currentVolume);
+  EEPROM.commit();
+  ESP_LOGI(MAIN_TAG, "Volume setting saved: %d", currentVolume);
+}
+
+// 볼륨 설정 로드
+void loadVolumeSettings() {
+  int volume = EEPROM.read(EEPROM_VOLUME_ADDR);
+  
+  // 기본값 설정 (EEPROM이 초기화되지 않은 경우)
+  if (volume < 0 || volume > 30) {
+    volume = 20; // 기본 볼륨 20
+    EEPROM.write(EEPROM_VOLUME_ADDR, volume);
+    EEPROM.commit();
+  }
+  
+  currentVolume = volume;
+  tempVolume = volume;
+  myDFPlayer.volume(currentVolume);
+  ESP_LOGI(MAIN_TAG, "Volume setting loaded: %d", currentVolume);
+}
+
 // 버튼 스왑 설정 로드
 void loadButtonSwapSettings() {
   const int swapFlag = EEPROM.read(EEPROM_BUTTON_SWAP_FLAG_ADDR);
@@ -407,14 +437,74 @@ void processGamepad(const ControllerPtr ctl) {
     myDFPlayer.play(SOUND_MACHINEGUN);
   }
 
-  // R1 버튼으로 헤드라이트 토글
+  // L1 + R1 버튼으로 볼륨 조절
+  static bool l1ButtonPressed = false;
   static bool r1ButtonPressed = false;
-  if (ctl->r1() && !r1ButtonPressed) {
+  
+  // L1 버튼으로 볼륨 감소
+  if (ctl->l1()) {
+    if (!l1ButtonPressed) {
+      l1ButtonPressed = true;
+      tempVolume = currentVolume; // 현재 볼륨을 임시 볼륨으로 복사
+    }
+    
+    // 볼륨 감소 (0-30 범위)
+    if (tempVolume > 0) {
+      tempVolume--;
+      ESP_LOGI(MAIN_TAG, "Volume decreased to: %d", tempVolume);
+    }
+  } else {
+    if (l1ButtonPressed) {
+      l1ButtonPressed = false;
+      // L1 버튼을 뗐을 때 볼륨 변경사항 저장
+      if (tempVolume != currentVolume) {
+        currentVolume = tempVolume;
+        myDFPlayer.volume(currentVolume); // DFPlayer 볼륨 적용
+        volumeChanged = true;
+        ESP_LOGI(MAIN_TAG, "Volume change confirmed: %d", currentVolume);
+      }
+    }
+  }
+  
+  // R1 버튼으로 볼륨 증가
+  if (ctl->r1()) {
+    if (!r1ButtonPressed) {
+      r1ButtonPressed = true;
+      tempVolume = currentVolume; // 현재 볼륨을 임시 볼륨으로 복사
+    }
+    
+    // 볼륨 증가 (0-30 범위)
+    if (tempVolume < 30) {
+      tempVolume++;
+      ESP_LOGI(MAIN_TAG, "Volume increased to: %d", tempVolume);
+    }
+  } else {
+    if (r1ButtonPressed) {
+      r1ButtonPressed = false;
+      // R1 버튼을 뗐을 때 볼륨 변경사항 저장
+      if (tempVolume != currentVolume) {
+        currentVolume = tempVolume;
+        myDFPlayer.volume(currentVolume); // DFPlayer 볼륨 적용
+        volumeChanged = true;
+        ESP_LOGI(MAIN_TAG, "Volume change confirmed: %d", currentVolume);
+      }
+    }
+  }
+  
+  // 볼륨이 변경되었으면 EEPROM에 저장
+  if (volumeChanged) {
+    saveVolumeSettings();
+    volumeChanged = false;
+  }
+  
+  // 헤드라이트 토글 (L2 + R2 버튼으로 변경, 단일 클릭)
+  static bool l2r2ButtonPressed = false;
+  if (ctl->l2() && ctl->r2() && !l2r2ButtonPressed) {
     headlightOn = !headlightOn;
     digitalWrite(HEADLIGHT_PIN, headlightOn ? HIGH : LOW);
-    r1ButtonPressed = true;
-  } else if (!ctl->r1()) {
-    r1ButtonPressed = false;
+    l2r2ButtonPressed = true;
+  } else if (!ctl->l2() || !ctl->r2()) {
+    l2r2ButtonPressed = false;
   }
 
   // 버튼 스왑 적용: X/Y 버튼 처리
@@ -459,22 +549,22 @@ void processGamepad(const ControllerPtr ctl) {
     yButtonPressed = false;
   }
 
-  // L1 + R1 버튼 3초 이상 동시 누름으로 버튼 스왑 토글
-  static bool l1r1Pressed = false;
-  static unsigned long l1r1StartTime = 0;
+  // L2 + R2 버튼 3초 이상 동시 누름으로 버튼 스왑 토글
+  static bool l2r2Pressed = false;
+  static unsigned long l2r2StartTime = 0;
 
-  if (ctl->l1() && ctl->r1()) {
-    if (!l1r1Pressed) {
-      l1r1Pressed = true;
-      l1r1StartTime = millis();
-      ESP_LOGI(MAIN_TAG, "L1 + R1 버튼이 눌렸습니다. 3초간 유지하면 버튼 스왑이 변경됩니다.");
+  if (ctl->l2() && ctl->r2()) {
+    if (!l2r2Pressed) {
+      l2r2Pressed = true;
+      l2r2StartTime = millis();
+      ESP_LOGI(MAIN_TAG, "L2 + R2 버튼이 눌렸습니다. 3초간 유지하면 버튼 스왑이 변경됩니다.");
     } else {
-      constexpr unsigned long l1r1HoldDuration = 3000;
+      constexpr unsigned long l2r2HoldDuration = 3000;
       // 버튼이 계속 눌려있는 상태에서 3초 경과 확인
-      if (millis() - l1r1StartTime >= l1r1HoldDuration) {
+      if (millis() - l2r2StartTime >= l2r2HoldDuration) {
         buttonSwapEnabled = !buttonSwapEnabled;
 
-        ESP_LOGI(MAIN_TAG, "L1 + R1 버튼을 3초간 누르셨습니다. 버튼 스왑: %s",
+        ESP_LOGI(MAIN_TAG, "L2 + R2 버튼을 3초간 누르셨습니다. 버튼 스왑: %s",
                  buttonSwapEnabled ? "활성화" : "비활성화");
 
         // 게임패드 진동으로 확인 신호
@@ -484,11 +574,11 @@ void processGamepad(const ControllerPtr ctl) {
         saveButtonSwapSettings();
 
         // 플래그 리셋하여 중복 실행 방지
-        l1r1Pressed = false;
+        l2r2Pressed = false;
       }
     }
   } else {
-    l1r1Pressed = false;
+    l2r2Pressed = false;
   }
 
   // Select + Start 버튼 3초 이상 동시 누름으로 EEPROM 초기화 및 재시작
@@ -670,7 +760,7 @@ void setup() {
   // DFPlayer 초기화
   DFPlayerSerial.begin(9600, SERIAL_8N1, DFPLAYER_RX, DFPLAYER_TX);
   myDFPlayer.begin(DFPlayerSerial);
-  myDFPlayer.volume(20); // 볼륨 설정 (0-30)
+  // 볼륨은 loadVolumeSettings()에서 설정됨
 
   // 효과음 1 재생 시작
   myDFPlayer.play(SOUND_IDLE);
@@ -679,6 +769,7 @@ void setup() {
   // EEPROM에서 설정 로드
   loadSpeedSettings();
   loadButtonSwapSettings();
+  loadVolumeSettings();
 
   // EEPROM 초기화 플래그 확인 (첫 실행 시)
   int initFlag = EEPROM.read(EEPROM_INIT_FLAG_ADDR);
