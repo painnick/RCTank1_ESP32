@@ -286,15 +286,15 @@ void loadButtonSwapSettings() {
 // EEPROM 초기화 및 ESP32 재시작
 void resetEEPROMAndRestart() {
   ESP_LOGI(MAIN_TAG, "EEPROM 초기화 및 재시작 시작...");
-  
+
   // 모든 EEPROM 데이터 초기화
   for (int i = 0; i < 512; i++) {
     EEPROM.write(i, 0);
   }
   EEPROM.commit();
-  
+
   ESP_LOGI(MAIN_TAG, "EEPROM 초기화 완료. 3초 후 재시작합니다.");
-  
+
   // 3초 대기 후 재시작
   delay(3000);
   esp_restart();
@@ -302,7 +302,7 @@ void resetEEPROMAndRestart() {
 
 void dumpGamepad(ControllerPtr ctl) {
   ESP_LOGV(MAIN_TAG,
-      "%s %s %s %s %s %s %s %s %s %s %s %s %s %s",
+      "%s %s %s %s %s %s %s %s %s %s %s %s %s %s misc: 0x%02x",
       ctl->a() ? "A" : "-",
       ctl->b() ? "B" : "-",
       ctl->x() ? "X" : "-",
@@ -316,7 +316,8 @@ void dumpGamepad(ControllerPtr ctl) {
       ctl->miscStart() ? "Start" : "------",
       ctl->miscSelect() ? "Select" : "------",
       ctl->miscSystem() ? "System" : "------",
-      ctl->miscCapture() ? "Capture" : "------"
+      ctl->miscCapture() ? "Capture" : "------",
+      ctl->miscButtons()
   );
 }
 
@@ -376,7 +377,7 @@ void processGamepad(const ControllerPtr ctl) {
   // 버튼 스왑 적용: A/B 버튼 처리
   bool buttonA = buttonSwapEnabled ? ctl->b() : ctl->a();
   bool buttonB = buttonSwapEnabled ? ctl->a() : ctl->b();
-  
+
   // B 버튼으로 포신 발사
   if (buttonB && !cannonFiring && !machineGunFiring) {
     cannonFiring = true;
@@ -419,7 +420,7 @@ void processGamepad(const ControllerPtr ctl) {
   // 버튼 스왑 적용: X/Y 버튼 처리
   bool buttonX = buttonSwapEnabled ? ctl->y() : ctl->x();
   bool buttonY = buttonSwapEnabled ? ctl->x() : ctl->y();
-  
+
   // X 버튼 + D-PAD Y축으로 좌측 트랙 속도 배율 설정
   static bool xButtonPressed = false;
   if (buttonX) {
@@ -462,7 +463,7 @@ void processGamepad(const ControllerPtr ctl) {
   static bool l1r1Pressed = false;
   static unsigned long l1r1StartTime = 0;
   constexpr unsigned long l1r1HoldDuration = 3000; // 3초
-  
+
   if (ctl->l1() && ctl->r1()) {
     if (!l1r1Pressed) {
       l1r1Pressed = true;
@@ -472,16 +473,16 @@ void processGamepad(const ControllerPtr ctl) {
       // 버튼이 계속 눌려있는 상태에서 3초 경과 확인
       if (millis() - l1r1StartTime >= l1r1HoldDuration) {
         buttonSwapEnabled = !buttonSwapEnabled;
-        
-        ESP_LOGI(MAIN_TAG, "L1 + R1 버튼을 3초간 누르셨습니다. 버튼 스왑: %s", 
+
+        ESP_LOGI(MAIN_TAG, "L1 + R1 버튼을 3초간 누르셨습니다. 버튼 스왑: %s",
                  buttonSwapEnabled ? "활성화" : "비활성화");
-        
+
         // 게임패드 진동으로 확인 신호
         ctl->playDualRumble(0, 600, 0xFF, 0x0);
-        
+
         // 설정 저장
         saveButtonSwapSettings();
-        
+
         // 플래그 리셋하여 중복 실행 방지
         l1r1Pressed = false;
       }
@@ -490,18 +491,27 @@ void processGamepad(const ControllerPtr ctl) {
     l1r1Pressed = false;
   }
 
-  // Select + Start 버튼 동시 누름으로 EEPROM 초기화 및 재시작
+    // Select + Start 버튼 3초 이상 동시 누름으로 EEPROM 초기화 및 재시작
   static bool selectStartPressed = false;
+  static unsigned long selectStartStartTime = 0;
+  constexpr unsigned long selectStartHoldDuration = 3000; // 3초
+  
   if (ctl->miscSelect() && ctl->miscStart()) {
     if (!selectStartPressed) {
       selectStartPressed = true;
-      ESP_LOGI(MAIN_TAG, "Select + Start 버튼이 동시에 눌렸습니다. EEPROM 초기화를 시작합니다.");
-      
-      // 게임패드 진동으로 확인 신호
-      ctl->playDualRumble(0, 800, 0xFF, 0x0);
-      
-      // EEPROM 초기화 및 재시작
-      resetEEPROMAndRestart();
+      selectStartStartTime = millis();
+      ESP_LOGI(MAIN_TAG, "Select + Start 버튼이 눌렸습니다. 3초간 유지하면 EEPROM 초기화가 시작됩니다.");
+    } else {
+      // 버튼이 계속 눌려있는 상태에서 3초 경과 확인
+      if (millis() - selectStartStartTime >= selectStartHoldDuration) {
+        ESP_LOGI(MAIN_TAG, "Select + Start 버튼을 3초간 누르셨습니다. EEPROM 초기화를 시작합니다.");
+        
+        // 게임패드 진동으로 확인 신호
+        ctl->playDualRumble(0, 800, 0xFF, 0x0);
+        
+        // EEPROM 초기화 및 재시작
+        resetEEPROMAndRestart();
+      }
     }
   } else {
     selectStartPressed = false;
@@ -669,7 +679,7 @@ void setup() {
   // EEPROM에서 설정 로드
   loadSpeedSettings();
   loadButtonSwapSettings();
-  
+
   // EEPROM 초기화 플래그 확인 (첫 실행 시)
   int initFlag = EEPROM.read(EEPROM_INIT_FLAG_ADDR);
   if (initFlag != 0xAA) {
