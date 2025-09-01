@@ -278,7 +278,7 @@ void saveButtonSwapSettings() {
 
 // 버튼 스왑 설정 로드
 void loadButtonSwapSettings() {
-  int swapFlag = EEPROM.read(EEPROM_BUTTON_SWAP_FLAG_ADDR);
+  const int swapFlag = EEPROM.read(EEPROM_BUTTON_SWAP_FLAG_ADDR);
   buttonSwapEnabled = (swapFlag == 1);
   ESP_LOGI(MAIN_TAG, "Button swap setting loaded: %s", buttonSwapEnabled ? "enabled" : "disabled");
 }
@@ -375,8 +375,8 @@ void processGamepad(const ControllerPtr ctl) {
   }
 
   // 버튼 스왑 적용: A/B 버튼 처리
-  bool buttonA = buttonSwapEnabled ? ctl->b() : ctl->a();
-  bool buttonB = buttonSwapEnabled ? ctl->a() : ctl->b();
+  const bool buttonA = buttonSwapEnabled ? ctl->b() : ctl->a();
+  const bool buttonB = buttonSwapEnabled ? ctl->a() : ctl->b();
 
   // B 버튼으로 포신 발사
   if (buttonB && !cannonFiring && !machineGunFiring) {
@@ -418,8 +418,8 @@ void processGamepad(const ControllerPtr ctl) {
   }
 
   // 버튼 스왑 적용: X/Y 버튼 처리
-  bool buttonX = buttonSwapEnabled ? ctl->y() : ctl->x();
-  bool buttonY = buttonSwapEnabled ? ctl->x() : ctl->y();
+  const bool buttonX = buttonSwapEnabled ? ctl->y() : ctl->x();
+  const bool buttonY = buttonSwapEnabled ? ctl->x() : ctl->y();
 
   // X 버튼 + D-PAD Y축으로 좌측 트랙 속도 배율 설정
   static bool xButtonPressed = false;
@@ -462,7 +462,6 @@ void processGamepad(const ControllerPtr ctl) {
   // L1 + R1 버튼 3초 이상 동시 누름으로 버튼 스왑 토글
   static bool l1r1Pressed = false;
   static unsigned long l1r1StartTime = 0;
-  constexpr unsigned long l1r1HoldDuration = 3000; // 3초
 
   if (ctl->l1() && ctl->r1()) {
     if (!l1r1Pressed) {
@@ -470,6 +469,7 @@ void processGamepad(const ControllerPtr ctl) {
       l1r1StartTime = millis();
       ESP_LOGI(MAIN_TAG, "L1 + R1 버튼이 눌렸습니다. 3초간 유지하면 버튼 스왑이 변경됩니다.");
     } else {
+      constexpr unsigned long l1r1HoldDuration = 3000;
       // 버튼이 계속 눌려있는 상태에서 3초 경과 확인
       if (millis() - l1r1StartTime >= l1r1HoldDuration) {
         buttonSwapEnabled = !buttonSwapEnabled;
@@ -491,24 +491,24 @@ void processGamepad(const ControllerPtr ctl) {
     l1r1Pressed = false;
   }
 
-    // Select + Start 버튼 3초 이상 동시 누름으로 EEPROM 초기화 및 재시작
+  // Select + Start 버튼 3초 이상 동시 누름으로 EEPROM 초기화 및 재시작
   static bool selectStartPressed = false;
   static unsigned long selectStartStartTime = 0;
-  constexpr unsigned long selectStartHoldDuration = 3000; // 3초
-  
+
   if (ctl->miscSelect() && ctl->miscStart()) {
     if (!selectStartPressed) {
       selectStartPressed = true;
       selectStartStartTime = millis();
       ESP_LOGI(MAIN_TAG, "Select + Start 버튼이 눌렸습니다. 3초간 유지하면 EEPROM 초기화가 시작됩니다.");
     } else {
+      constexpr unsigned long selectStartHoldDuration = 3000;
       // 버튼이 계속 눌려있는 상태에서 3초 경과 확인
       if (millis() - selectStartStartTime >= selectStartHoldDuration) {
         ESP_LOGI(MAIN_TAG, "Select + Start 버튼을 3초간 누르셨습니다. EEPROM 초기화를 시작합니다.");
-        
+
         // 게임패드 진동으로 확인 신호
         ctl->playDualRumble(0, 800, 0xFF, 0x0);
-        
+
         // EEPROM 초기화 및 재시작
         resetEEPROMAndRestart();
       }
