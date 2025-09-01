@@ -43,9 +43,10 @@ typedef struct {
 // EEPROM 주소
 #define EEPROM_LEFT_SPEED_ADDR 0
 #define EEPROM_RIGHT_SPEED_ADDR 1
+#define EEPROM_BUTTON_SWAP_FLAG_ADDR 2
 
 // EEPROM 초기화 플래그
-#define EEPROM_INIT_FLAG_ADDR 2
+#define EEPROM_INIT_FLAG_ADDR 3
 
 // 게임패드 관련 변수
 ControllerPtr myControllers[BP32_MAX_GAMEPADS];
@@ -69,6 +70,9 @@ int rightTrackPWM = 0;
 int turretPWM = 0;
 int cannonMountAngle = 90; // 포 마운트 기본 각도 (중앙)
 int cannonAngle = 90; // 포신 기본 각도 (중앙)
+
+// 버튼 스왑 설정
+bool buttonSwapEnabled = false; // A/B, X/Y 버튼 스왑 여부
 
 // DC 모터 이전 속도 값 저장 변수
 int prevLeftTrackSpeed = 0;
@@ -265,6 +269,20 @@ void saveSpeedSettings() {
   ESP_LOGI(MAIN_TAG, "Speed multipliers saved: left=%.1f, right=%.1f", leftTrackMultiplier, rightTrackMultiplier);
 }
 
+// 버튼 스왑 설정 저장
+void saveButtonSwapSettings() {
+  EEPROM.write(EEPROM_BUTTON_SWAP_FLAG_ADDR, buttonSwapEnabled ? 1 : 0);
+  EEPROM.commit();
+  ESP_LOGI(MAIN_TAG, "Button swap setting saved: %s", buttonSwapEnabled ? "enabled" : "disabled");
+}
+
+// 버튼 스왑 설정 로드
+void loadButtonSwapSettings() {
+  int swapFlag = EEPROM.read(EEPROM_BUTTON_SWAP_FLAG_ADDR);
+  buttonSwapEnabled = (swapFlag == 1);
+  ESP_LOGI(MAIN_TAG, "Button swap setting loaded: %s", buttonSwapEnabled ? "enabled" : "disabled");
+}
+
 // EEPROM 초기화 및 ESP32 재시작
 void resetEEPROMAndRestart() {
   ESP_LOGI(MAIN_TAG, "EEPROM 초기화 및 재시작 시작...");
@@ -355,8 +373,12 @@ void processGamepad(const ControllerPtr ctl) {
     setCannonMountAngle(cannonMountAngle);
   }
 
-  // B 버튼으로 포신 발사 (A/B 버튼이 뒤바뀜)
-  if (ctl->b() && !cannonFiring && !machineGunFiring) {
+  // 버튼 스왑 적용: A/B 버튼 처리
+  bool buttonA = buttonSwapEnabled ? ctl->b() : ctl->a();
+  bool buttonB = buttonSwapEnabled ? ctl->a() : ctl->b();
+  
+  // B 버튼으로 포신 발사
+  if (buttonB && !cannonFiring && !machineGunFiring) {
     cannonFiring = true;
     cannonStartTime = millis();
     ledBlinking = true;
@@ -371,8 +393,8 @@ void processGamepad(const ControllerPtr ctl) {
     myDFPlayer.play(SOUND_CANNON);
   }
 
-  // A 버튼으로 기관총 발사 (A/B 버튼이 뒤바뀜)
-  if (ctl->a() && !machineGunFiring && !cannonFiring) {
+  // A 버튼으로 기관총 발사
+  if (buttonA && !machineGunFiring && !cannonFiring) {
     machineGunFiring = true;
     machineGunStartTime = millis();
     ledBlinking = true;
@@ -394,9 +416,13 @@ void processGamepad(const ControllerPtr ctl) {
     r1ButtonPressed = false;
   }
 
-  // X 버튼 + D-PAD Y축으로 좌측 트랙 속도 배율 설정 (X/Y 버튼이 뒤바뀜)
+  // 버튼 스왑 적용: X/Y 버튼 처리
+  bool buttonX = buttonSwapEnabled ? ctl->y() : ctl->x();
+  bool buttonY = buttonSwapEnabled ? ctl->x() : ctl->y();
+  
+  // X 버튼 + D-PAD Y축으로 좌측 트랙 속도 배율 설정
   static bool xButtonPressed = false;
-  if (ctl->x()) {
+  if (buttonX) {
     if (!xButtonPressed) {
       xButtonPressed = true;
     }
@@ -413,9 +439,9 @@ void processGamepad(const ControllerPtr ctl) {
     xButtonPressed = false;
   }
 
-  // Y 버튼 + D-PAD Y축으로 우측 트랙 속도 배율 설정 (X/Y 버튼이 뒤바뀜)
+  // Y 버튼 + D-PAD Y축으로 우측 트랙 속도 배율 설정
   static bool yButtonPressed = false;
-  if (ctl->y()) {
+  if (buttonY) {
     if (!yButtonPressed) {
       yButtonPressed = true;
     }
@@ -430,6 +456,38 @@ void processGamepad(const ControllerPtr ctl) {
     }
   } else {
     yButtonPressed = false;
+  }
+
+  // L1 + R1 버튼 3초 이상 동시 누름으로 버튼 스왑 토글
+  static bool l1r1Pressed = false;
+  static unsigned long l1r1StartTime = 0;
+  constexpr unsigned long l1r1HoldDuration = 3000; // 3초
+  
+  if (ctl->l1() && ctl->r1()) {
+    if (!l1r1Pressed) {
+      l1r1Pressed = true;
+      l1r1StartTime = millis();
+      ESP_LOGI(MAIN_TAG, "L1 + R1 버튼이 눌렸습니다. 3초간 유지하면 버튼 스왑이 변경됩니다.");
+    } else {
+      // 버튼이 계속 눌려있는 상태에서 3초 경과 확인
+      if (millis() - l1r1StartTime >= l1r1HoldDuration) {
+        buttonSwapEnabled = !buttonSwapEnabled;
+        
+        ESP_LOGI(MAIN_TAG, "L1 + R1 버튼을 3초간 누르셨습니다. 버튼 스왑: %s", 
+                 buttonSwapEnabled ? "활성화" : "비활성화");
+        
+        // 게임패드 진동으로 확인 신호
+        ctl->playDualRumble(0, 600, 0xFF, 0x0);
+        
+        // 설정 저장
+        saveButtonSwapSettings();
+        
+        // 플래그 리셋하여 중복 실행 방지
+        l1r1Pressed = false;
+      }
+    }
+  } else {
+    l1r1Pressed = false;
   }
 
   // Select + Start 버튼 동시 누름으로 EEPROM 초기화 및 재시작
@@ -608,8 +666,9 @@ void setup() {
   myDFPlayer.play(SOUND_IDLE);
   lastIdleSoundTime = millis();
 
-  // EEPROM에서 속도 설정 로드
+  // EEPROM에서 설정 로드
   loadSpeedSettings();
+  loadButtonSwapSettings();
   
   // EEPROM 초기화 플래그 확인 (첫 실행 시)
   int initFlag = EEPROM.read(EEPROM_INIT_FLAG_ADDR);
