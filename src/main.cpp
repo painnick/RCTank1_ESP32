@@ -556,22 +556,22 @@ void processGamepad(const ControllerPtr ctl) {
     yButtonPressed = false;
   }
 
-  // L2 + R2 버튼 3초 이상 동시 누름으로 버튼 스왑 토글
-  static bool l2r2Pressed = false;
-  static unsigned long l2r2StartTime = 0;
+  // L1 + R1 버튼 3초 이상 동시 누름으로 버튼 스왑 토글
+  static bool l1r1Pressed = false;
+  static unsigned long l1r1StartTime = 0;
 
-  if (ctl->l2() && ctl->r2()) {
-    if (!l2r2Pressed) {
-      l2r2Pressed = true;
-      l2r2StartTime = millis();
-      ESP_LOGI(MAIN_TAG, "L2 + R2 버튼이 눌렸습니다. 3초간 유지하면 버튼 스왑이 변경됩니다.");
+  if (ctl->l1() && ctl->r1()) {
+    if (!l1r1Pressed) {
+      l1r1Pressed = true;
+      l1r1StartTime = millis();
+      ESP_LOGI(MAIN_TAG, "L1 + R1 버튼이 눌렸습니다. 3초간 유지하면 버튼 스왑이 변경됩니다.");
     } else {
-      constexpr unsigned long l2r2HoldDuration = 3000;
+      constexpr unsigned long l1r1HoldDuration = 3000;
       // 버튼이 계속 눌려있는 상태에서 3초 경과 확인
-      if (millis() - l2r2StartTime >= l2r2HoldDuration) {
+      if (millis() - l1r1StartTime >= l1r1HoldDuration) {
         buttonSwapEnabled = !buttonSwapEnabled;
 
-        ESP_LOGI(MAIN_TAG, "L2 + R2 버튼을 3초간 누르셨습니다. 버튼 스왑: %s",
+        ESP_LOGI(MAIN_TAG, "L1 + R1 버튼을 3초간 누르셨습니다. 버튼 스왑: %s",
                  buttonSwapEnabled ? "활성화" : "비활성화");
 
         // 게임패드 진동으로 확인 신호
@@ -581,11 +581,11 @@ void processGamepad(const ControllerPtr ctl) {
         saveButtonSwapSettings();
 
         // 플래그 리셋하여 중복 실행 방지
-        l2r2Pressed = false;
+        l1r1Pressed = false;
       }
     }
   } else {
-    l2r2Pressed = false;
+    l1r1Pressed = false;
   }
 
   // Select + Start 버튼 3초 이상 동시 누름으로 EEPROM 초기화 및 재시작
