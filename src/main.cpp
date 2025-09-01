@@ -76,7 +76,7 @@ int cannonAngle = 90; // 포신 기본 각도 (중앙)
 bool buttonSwapEnabled = false; // A/B, X/Y 버튼 스왑 여부
 
 // 볼륨 제어 변수
-int currentVolume = 20; // 현재 볼륨 (0-30)
+int currentVolume = 20; // 현재 볼륨 (1-30)
 int tempVolume = 20; // 임시 볼륨 (버튼을 누르고 있는 동안 사용)
 bool volumeChanged = false; // 볼륨이 변경되었는지 확인
 
@@ -292,14 +292,14 @@ void saveVolumeSettings() {
 // 볼륨 설정 로드
 void loadVolumeSettings() {
   int volume = EEPROM.read(EEPROM_VOLUME_ADDR);
-  
+
   // 기본값 설정 (EEPROM이 초기화되지 않은 경우)
-  if (volume < 0 || volume > 30) {
+  if (volume < 1 || volume > 30) {
     volume = 20; // 기본 볼륨 20
     EEPROM.write(EEPROM_VOLUME_ADDR, volume);
     EEPROM.commit();
   }
-  
+
   currentVolume = volume;
   tempVolume = volume;
   myDFPlayer.volume(currentVolume);
@@ -437,20 +437,25 @@ void processGamepad(const ControllerPtr ctl) {
     myDFPlayer.play(SOUND_MACHINEGUN);
   }
 
-  // L1 + R1 버튼으로 볼륨 조절
+  // L1 + R1 버튼으로 볼륨 조절 (둔감하게 처리)
   static bool l1ButtonPressed = false;
   static bool r1ButtonPressed = false;
-  
+  static unsigned long l1LastChangeTime = 0;
+  static unsigned long r1LastChangeTime = 0;
+  constexpr unsigned long volumeChangeInterval = 200; // 200ms 간격으로 볼륨 변경
+
   // L1 버튼으로 볼륨 감소
   if (ctl->l1()) {
     if (!l1ButtonPressed) {
       l1ButtonPressed = true;
       tempVolume = currentVolume; // 현재 볼륨을 임시 볼륨으로 복사
+      l1LastChangeTime = millis();
     }
-    
-    // 볼륨 감소 (0-30 범위)
-    if (tempVolume > 0) {
+
+    // 볼륨 감소 (1-30 범위, 200ms 간격으로만 변경)
+    if (tempVolume > 1 && (millis() - l1LastChangeTime >= volumeChangeInterval)) {
       tempVolume--;
+      l1LastChangeTime = millis();
       ESP_LOGI(MAIN_TAG, "Volume decreased to: %d", tempVolume);
     }
   } else {
@@ -465,17 +470,19 @@ void processGamepad(const ControllerPtr ctl) {
       }
     }
   }
-  
+
   // R1 버튼으로 볼륨 증가
   if (ctl->r1()) {
     if (!r1ButtonPressed) {
       r1ButtonPressed = true;
       tempVolume = currentVolume; // 현재 볼륨을 임시 볼륨으로 복사
+      r1LastChangeTime = millis();
     }
-    
-    // 볼륨 증가 (0-30 범위)
-    if (tempVolume < 30) {
+
+    // 볼륨 증가 (0-30 범위, 200ms 간격으로만 변경)
+    if (tempVolume < 30 && (millis() - r1LastChangeTime >= volumeChangeInterval)) {
       tempVolume++;
+      r1LastChangeTime = millis();
       ESP_LOGI(MAIN_TAG, "Volume increased to: %d", tempVolume);
     }
   } else {
@@ -490,13 +497,13 @@ void processGamepad(const ControllerPtr ctl) {
       }
     }
   }
-  
+
   // 볼륨이 변경되었으면 EEPROM에 저장
   if (volumeChanged) {
     saveVolumeSettings();
     volumeChanged = false;
   }
-  
+
   // 헤드라이트 토글 (L2 + R2 버튼으로 변경, 단일 클릭)
   static bool l2r2ButtonPressed = false;
   if (ctl->l2() && ctl->r2() && !l2r2ButtonPressed) {
@@ -762,17 +769,17 @@ void setup() {
   myDFPlayer.begin(DFPlayerSerial);
   // 볼륨은 loadVolumeSettings()에서 설정됨
 
-  // 효과음 1 재생 시작
-  myDFPlayer.play(SOUND_IDLE);
-  lastIdleSoundTime = millis();
-
   // EEPROM에서 설정 로드
   loadSpeedSettings();
   loadButtonSwapSettings();
   loadVolumeSettings();
 
+  // 효과음 1 재생 시작
+  myDFPlayer.play(SOUND_IDLE);
+  lastIdleSoundTime = millis();
+
   // EEPROM 초기화 플래그 확인 (첫 실행 시)
-  int initFlag = EEPROM.read(EEPROM_INIT_FLAG_ADDR);
+  const int initFlag = EEPROM.read(EEPROM_INIT_FLAG_ADDR);
   if (initFlag != 0xAA) {
     ESP_LOGI(MAIN_TAG, "EEPROM이 초기화되지 않았습니다. 초기화 플래그를 설정합니다.");
     EEPROM.write(EEPROM_INIT_FLAG_ADDR, 0xAA);
