@@ -44,6 +44,9 @@ typedef struct {
 #define EEPROM_LEFT_SPEED_ADDR 0
 #define EEPROM_RIGHT_SPEED_ADDR 1
 
+// EEPROM 초기화 플래그
+#define EEPROM_INIT_FLAG_ADDR 2
+
 // 게임패드 관련 변수
 ControllerPtr myControllers[BP32_MAX_GAMEPADS];
 bool gamepadConnected = false;
@@ -253,13 +256,30 @@ void loadSpeedSettings() {
 // EEPROM에 속도 배율 값 저장
 void saveSpeedSettings() {
   // 배율을 정수로 변환하여 저장 (1.0 = 100)
-  int leftMultiplierInt = static_cast<int>(leftTrackMultiplier * 100);
-  int rightMultiplierInt = static_cast<int>(rightTrackMultiplier * 100);
+  const int leftMultiplierInt = static_cast<int>(leftTrackMultiplier * 100);
+  const int rightMultiplierInt = static_cast<int>(rightTrackMultiplier * 100);
 
   EEPROM.write(EEPROM_LEFT_SPEED_ADDR, leftMultiplierInt);
   EEPROM.write(EEPROM_RIGHT_SPEED_ADDR, rightMultiplierInt);
   EEPROM.commit();
   ESP_LOGI(MAIN_TAG, "Speed multipliers saved: left=%.1f, right=%.1f", leftTrackMultiplier, rightTrackMultiplier);
+}
+
+// EEPROM 초기화 및 ESP32 재시작
+void resetEEPROMAndRestart() {
+  ESP_LOGI(MAIN_TAG, "EEPROM 초기화 및 재시작 시작...");
+  
+  // 모든 EEPROM 데이터 초기화
+  for (int i = 0; i < 512; i++) {
+    EEPROM.write(i, 0);
+  }
+  EEPROM.commit();
+  
+  ESP_LOGI(MAIN_TAG, "EEPROM 초기화 완료. 3초 후 재시작합니다.");
+  
+  // 3초 대기 후 재시작
+  delay(3000);
+  esp_restart();
 }
 
 void dumpGamepad(ControllerPtr ctl) {
@@ -410,6 +430,23 @@ void processGamepad(const ControllerPtr ctl) {
     }
   } else {
     yButtonPressed = false;
+  }
+
+  // Select + Start 버튼 동시 누름으로 EEPROM 초기화 및 재시작
+  static bool selectStartPressed = false;
+  if (ctl->miscSelect() && ctl->miscStart()) {
+    if (!selectStartPressed) {
+      selectStartPressed = true;
+      ESP_LOGI(MAIN_TAG, "Select + Start 버튼이 동시에 눌렸습니다. EEPROM 초기화를 시작합니다.");
+      
+      // 게임패드 진동으로 확인 신호
+      ctl->playDualRumble(0, 800, 0xFF, 0x0);
+      
+      // EEPROM 초기화 및 재시작
+      resetEEPROMAndRestart();
+    }
+  } else {
+    selectStartPressed = false;
   }
 }
 
@@ -573,6 +610,14 @@ void setup() {
 
   // EEPROM에서 속도 설정 로드
   loadSpeedSettings();
+  
+  // EEPROM 초기화 플래그 확인 (첫 실행 시)
+  int initFlag = EEPROM.read(EEPROM_INIT_FLAG_ADDR);
+  if (initFlag != 0xAA) {
+    ESP_LOGI(MAIN_TAG, "EEPROM이 초기화되지 않았습니다. 초기화 플래그를 설정합니다.");
+    EEPROM.write(EEPROM_INIT_FLAG_ADDR, 0xAA);
+    EEPROM.commit();
+  }
 
   // Bluepad32 설정
   BP32.setup(&onConnectedController, &onDisconnectedController);
