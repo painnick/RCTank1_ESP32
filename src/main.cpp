@@ -22,17 +22,23 @@ static const char* MAIN_TAG = "RC_TANK";
 #define CANNON_MOUNT_SERVO_PIN 19   // 포 마운트 서보 모터 핀 (우측 Y축으로 각도 조절)
 #define CANNON_SERVO_PIN 18     // 포신 서보 모터 핀 (A 버튼으로 당기기)
 
-// MCPWM 유닛 및 타이머 정의 (모든 Unit은 MCPWM_UNIT_0 사용)
-#define LEFT_TRACK_MCPWM_UNIT MCPWM_UNIT_0
-#define RIGHT_TRACK_MCPWM_UNIT MCPWM_UNIT_0
-#define TURRET_MCPWM_UNIT MCPWM_UNIT_0
-
-#define LEFT_TRACK_MCPWM_TIMER MCPWM_TIMER_0
-#define RIGHT_TRACK_MCPWM_TIMER MCPWM_TIMER_1
-#define TURRET_MCPWM_TIMER MCPWM_TIMER_2
+// MCPWM 설정 (모든 모터는 MCPWM_UNIT_0 사용)
+#define MCPWM_UNIT MCPWM_UNIT_0
+#define LEFT_TRACK_TIMER MCPWM_TIMER_0
+#define RIGHT_TRACK_TIMER MCPWM_TIMER_1
+#define TURRET_TIMER MCPWM_TIMER_2
 
 // DC 모터 최소 속도 임계값 (50 미만은 처리하지 않음)
 #define MOTOR_MIN_SPEED_THRESHOLD 50
+
+// 모터 설정 구조체
+typedef struct {
+    int in1Pin;
+    int in2Pin;
+    mcpwm_unit_t unit;
+    mcpwm_timer_t timer;
+    int* prevSpeed;
+} MotorConfig;
 
 // EEPROM 주소
 #define EEPROM_LEFT_SPEED_ADDR 0
@@ -65,6 +71,31 @@ int cannonAngle = 90;    // 포신 기본 각도 (중앙)
 int prevLeftTrackSpeed = 0;
 int prevRightTrackSpeed = 0;
 int prevTurretSpeed = 0;
+
+// 모터 설정 구조체 인스턴스
+MotorConfig leftTrackMotor = {
+    .in1Pin = LEFT_TRACK_IN1,
+    .in2Pin = LEFT_TRACK_IN2,
+    .unit = MCPWM_UNIT,
+    .timer = LEFT_TRACK_TIMER,
+    .prevSpeed = &prevLeftTrackSpeed
+};
+
+MotorConfig rightTrackMotor = {
+    .in1Pin = RIGHT_TRACK_IN1,
+    .in2Pin = RIGHT_TRACK_IN2,
+    .unit = MCPWM_UNIT,
+    .timer = RIGHT_TRACK_TIMER,
+    .prevSpeed = &prevRightTrackSpeed
+};
+
+MotorConfig turretMotor = {
+    .in1Pin = TURRET_IN1,
+    .in2Pin = TURRET_IN2,
+    .unit = MCPWM_UNIT,
+    .timer = TURRET_TIMER,
+    .prevSpeed = &prevTurretSpeed
+};
 
 // LED 상태
 bool headlightOn = false;
@@ -144,36 +175,36 @@ void onDisconnectedController(ControllerPtr ctl) {
 }
 
 // DC 모터 제어 함수 (MCPWM 사용, 속도 변화가 없으면 호출 무시)
-void setMotorSpeed(int in1Pin, int in2Pin, mcpwm_unit_t unit, mcpwm_timer_t timer, int speed, int* prevSpeed) {
+void setMotorSpeed(MotorConfig* motor, int speed) {
     // 최소 속도 임계값 적용
     if (abs(speed) < MOTOR_MIN_SPEED_THRESHOLD) {
         speed = 0;
     }
 
     // 속도 변화가 없으면 호출 무시
-    if (speed == *prevSpeed) {
+    if (speed == *(motor->prevSpeed)) {
         return;
     }
 
     ESP_LOGD(MAIN_TAG, "setMotorSpeed IN1:%d IN2:%d Unit:%d Timer:%d Speed:%d (prev:%d)",
-             in1Pin, in2Pin, unit, timer, speed, *prevSpeed);
+             motor->in1Pin, motor->in2Pin, motor->unit, motor->timer, speed, *(motor->prevSpeed));
 
     if (speed > 0) {
         // 정방향 회전
-        mcpwm_set_duty(unit, timer, MCPWM_OPR_A, speed);
-        mcpwm_set_duty(unit, timer, MCPWM_OPR_B, 0);
+        mcpwm_set_duty(motor->unit, motor->timer, MCPWM_OPR_A, speed);
+        mcpwm_set_duty(motor->unit, motor->timer, MCPWM_OPR_B, 0);
     } else if (speed < 0) {
         // 역방향 회전
-        mcpwm_set_duty(unit, timer, MCPWM_OPR_A, 0);
-        mcpwm_set_duty(unit, timer, MCPWM_OPR_B, -speed);
+        mcpwm_set_duty(motor->unit, motor->timer, MCPWM_OPR_A, 0);
+        mcpwm_set_duty(motor->unit, motor->timer, MCPWM_OPR_B, -speed);
     } else {
         // 정지
-        mcpwm_set_duty(unit, timer, MCPWM_OPR_A, 0);
-        mcpwm_set_duty(unit, timer, MCPWM_OPR_B, 0);
+        mcpwm_set_duty(motor->unit, motor->timer, MCPWM_OPR_A, 0);
+        mcpwm_set_duty(motor->unit, motor->timer, MCPWM_OPR_B, 0);
     }
 
     // 현재 속도를 이전 속도로 저장
-    *prevSpeed = speed;
+    *(motor->prevSpeed) = speed;
 }
 
 // 포 마운트 서보 모터 제어 함수
@@ -251,8 +282,8 @@ void processGamepad(ControllerPtr ctl) {
     rightTrackSpeed = constrain(rightTrackSpeed, -255, 255);
 
     // 모터 제어
-    setMotorSpeed(LEFT_TRACK_IN1, LEFT_TRACK_IN2, LEFT_TRACK_MCPWM_UNIT, LEFT_TRACK_MCPWM_TIMER, leftTrackSpeed, &prevLeftTrackSpeed);
-    setMotorSpeed(RIGHT_TRACK_IN1, RIGHT_TRACK_IN2, RIGHT_TRACK_MCPWM_UNIT, RIGHT_TRACK_MCPWM_TIMER, rightTrackSpeed, &prevRightTrackSpeed);
+    setMotorSpeed(&leftTrackMotor, leftTrackSpeed);
+    setMotorSpeed(&rightTrackMotor, rightTrackSpeed);
 
     // D-PAD로 터렛과 포 마운트 제어
     // D-PAD 좌우로 터렛 제어
@@ -262,7 +293,7 @@ void processGamepad(ControllerPtr ctl) {
     } else if (ctl->dpad() == DPAD_RIGHT) {
         turretSpeed = 255;  // 우측 회전
     }
-    setMotorSpeed(TURRET_IN1, TURRET_IN2, TURRET_MCPWM_UNIT, TURRET_MCPWM_TIMER, turretSpeed, &prevTurretSpeed);
+    setMotorSpeed(&turretMotor, turretSpeed);
 
     // D-PAD 상하로 포 마운트 각도 제어
     if (ctl->dpad() == DPAD_UP) {
@@ -472,25 +503,26 @@ void setup() {
     pwm_config.counter_mode = MCPWM_UP_COUNTER;
     pwm_config.duty_mode = MCPWM_DUTY_MODE_0;
 
-    // 좌측 트랙 MCPWM 설정 (MCPWM_UNIT_0, MCPWM_TIMER_0)
-    mcpwm_init(LEFT_TRACK_MCPWM_UNIT, LEFT_TRACK_MCPWM_TIMER, &pwm_config);
-    mcpwm_gpio_init(LEFT_TRACK_MCPWM_UNIT, MCPWM0A, LEFT_TRACK_IN1);
-    mcpwm_gpio_init(LEFT_TRACK_MCPWM_UNIT, MCPWM0B, LEFT_TRACK_IN2);
+    // MCPWM 초기화 (모든 모터는 MCPWM_UNIT_0 사용)
+    // 좌측 트랙 (TIMER_0)
+    mcpwm_init(MCPWM_UNIT, LEFT_TRACK_TIMER, &pwm_config);
+    mcpwm_gpio_init(MCPWM_UNIT, MCPWM0A, LEFT_TRACK_IN1);
+    mcpwm_gpio_init(MCPWM_UNIT, MCPWM0B, LEFT_TRACK_IN2);
 
-    // 우측 트랙 MCPWM 설정 (MCPWM_UNIT_0, MCPWM_TIMER_1)
-    mcpwm_init(RIGHT_TRACK_MCPWM_UNIT, RIGHT_TRACK_MCPWM_TIMER, &pwm_config);
-    mcpwm_gpio_init(RIGHT_TRACK_MCPWM_UNIT, MCPWM1A, RIGHT_TRACK_IN1);
-    mcpwm_gpio_init(RIGHT_TRACK_MCPWM_UNIT, MCPWM1B, RIGHT_TRACK_IN2);
+    // 우측 트랙 (TIMER_1)
+    mcpwm_init(MCPWM_UNIT, RIGHT_TRACK_TIMER, &pwm_config);
+    mcpwm_gpio_init(MCPWM_UNIT, MCPWM1A, RIGHT_TRACK_IN1);
+    mcpwm_gpio_init(MCPWM_UNIT, MCPWM1B, RIGHT_TRACK_IN2);
 
-    // 터렛 MCPWM 설정 (MCPWM_UNIT_0, MCPWM_TIMER_2)
-    mcpwm_init(TURRET_MCPWM_UNIT, TURRET_MCPWM_TIMER, &pwm_config);
-    mcpwm_gpio_init(TURRET_MCPWM_UNIT, MCPWM2A, TURRET_IN1);
-    mcpwm_gpio_init(TURRET_MCPWM_UNIT, MCPWM2B, TURRET_IN2);
+    // 터렛 (TIMER_2)
+    mcpwm_init(MCPWM_UNIT, TURRET_TIMER, &pwm_config);
+    mcpwm_gpio_init(MCPWM_UNIT, MCPWM2A, TURRET_IN1);
+    mcpwm_gpio_init(MCPWM_UNIT, MCPWM2B, TURRET_IN2);
 
     // 모터 정지
-    setMotorSpeed(LEFT_TRACK_IN1, LEFT_TRACK_IN2, LEFT_TRACK_MCPWM_UNIT, LEFT_TRACK_MCPWM_TIMER, 0, &prevLeftTrackSpeed);
-    setMotorSpeed(RIGHT_TRACK_IN1, RIGHT_TRACK_IN2, RIGHT_TRACK_MCPWM_UNIT, RIGHT_TRACK_MCPWM_TIMER, 0, &prevRightTrackSpeed);
-    setMotorSpeed(TURRET_IN1, TURRET_IN2, TURRET_MCPWM_UNIT, TURRET_MCPWM_TIMER, 0, &prevTurretSpeed);
+    setMotorSpeed(&leftTrackMotor, 0);
+    setMotorSpeed(&rightTrackMotor, 0);
+    setMotorSpeed(&turretMotor, 0);
 
     // 서보 모터 초기화
     cannonMountServo.attach(CANNON_MOUNT_SERVO_PIN);  // 포 마운트 서보 모터
