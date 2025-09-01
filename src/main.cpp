@@ -262,8 +262,30 @@ void saveSpeedSettings() {
   ESP_LOGI(MAIN_TAG, "Speed multipliers saved: left=%.1f, right=%.1f", leftTrackMultiplier, rightTrackMultiplier);
 }
 
+void dumpGamepad(ControllerPtr ctl) {
+  ESP_LOGV(MAIN_TAG,
+      "%s %s %s %s %s %s %s %s %s %s %s %s %s %s",
+      ctl->a() ? "A" : "-",
+      ctl->b() ? "B" : "-",
+      ctl->x() ? "X" : "-",
+      ctl->y() ? "Y" : "-",
+      ctl->l1() ? "L1" : "--",
+      ctl->r1() ? "R1" : "--",
+      ctl->l2() ? "L2" : "--",
+      ctl->r2() ? "R2" : "--",
+      ctl->thumbL() ? "ThumbL" : "------",
+      ctl->thumbR() ? "ThumbR" : "------",
+      ctl->miscStart() ? "Start" : "------",
+      ctl->miscSelect() ? "Select" : "------",
+      ctl->miscSystem() ? "System" : "------",
+      ctl->miscCapture() ? "Capture" : "------"
+  );
+}
+
 // 게임패드 처리 함수
-void processGamepad(ControllerPtr ctl) {
+void processGamepad(const ControllerPtr ctl) {
+  dumpGamepad(ctl);
+
   // 좌측 스틱 Y축으로 좌측 트랙 제어, 우측 스틱 Y축으로 우측 트랙 제어
   int leftStickY = ctl->axisY();
   int rightStickY = ctl->axisRY();
@@ -283,8 +305,8 @@ void processGamepad(ControllerPtr ctl) {
   rightTrackSpeed = constrain(rightTrackSpeed, -255, 255);
 
   // 배율 적용
-  leftTrackSpeed = (int) (leftTrackSpeed * leftTrackMultiplier);
-  rightTrackSpeed = (int) (rightTrackSpeed * rightTrackMultiplier);
+  leftTrackSpeed = static_cast<int>(leftTrackSpeed * leftTrackMultiplier);
+  rightTrackSpeed = static_cast<int>(rightTrackSpeed * rightTrackMultiplier);
 
   // 최종 속도 제한
   leftTrackSpeed = constrain(leftTrackSpeed, -255, 255);
