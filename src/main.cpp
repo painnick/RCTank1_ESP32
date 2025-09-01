@@ -442,7 +442,7 @@ void processGamepad(const ControllerPtr ctl) {
   static bool r1ButtonPressed = false;
   static unsigned long l1LastChangeTime = 0;
   static unsigned long r1LastChangeTime = 0;
-  constexpr unsigned long volumeChangeInterval = 200; // 200ms 간격으로 볼륨 변경
+  constexpr unsigned long volumeChangeInterval = 100; // 100ms 간격으로 볼륨 변경
 
   // L1 + (X 또는 Y) 버튼으로 볼륨 감소
   if (ctl->l1() && (ctl->x() || ctl->y())) {
@@ -452,7 +452,7 @@ void processGamepad(const ControllerPtr ctl) {
       l1LastChangeTime = millis();
     }
 
-    // 볼륨 감소 (1-30 범위, 200ms 간격으로만 변경)
+    // 볼륨 감소 (1-30 범위, 100ms 간격으로만 변경)
     if (tempVolume > 1 && (millis() - l1LastChangeTime >= volumeChangeInterval)) {
       tempVolume--;
       l1LastChangeTime = millis();
@@ -479,7 +479,7 @@ void processGamepad(const ControllerPtr ctl) {
       r1LastChangeTime = millis();
     }
 
-    // 볼륨 증가 (1-30 범위, 200ms 간격으로만 변경)
+    // 볼륨 증가 (1-30 범위, 100ms 간격으로만 변경)
     if (tempVolume < 30 && (millis() - r1LastChangeTime >= volumeChangeInterval)) {
       tempVolume++;
       r1LastChangeTime = millis();
