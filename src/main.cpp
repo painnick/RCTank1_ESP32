@@ -28,8 +28,8 @@ static const char* MAIN_TAG = "RC_TANK";
 #define RIGHT_TRACK_TIMER MCPWM_TIMER_1
 #define TURRET_TIMER MCPWM_TIMER_2
 
-// DC 모터 최소 속도 임계값 (50 미만은 처리하지 않음)
-#define MOTOR_MIN_SPEED_THRESHOLD 50
+// DC 모터 최소 속도 임계값 (80 미만은 처리하지 않음)
+#define MOTOR_MIN_SPEED_THRESHOLD 80
 
 // 모터 설정 구조체
 typedef struct {
@@ -349,7 +349,7 @@ void processGamepad(ControllerPtr ctl) {
         if (!xButtonPressed) {
             xButtonPressed = true;
         }
-        
+
         // D-PAD 상하로 좌측 트랙 속도 배율 조절 (0.1~2.0)
         if (ctl->dpad() == DPAD_UP) {
             leftTrackMultiplier = constrain(leftTrackMultiplier + 0.02, 0.1, 2.0);
@@ -368,7 +368,7 @@ void processGamepad(ControllerPtr ctl) {
         if (!yButtonPressed) {
             yButtonPressed = true;
         }
-        
+
         // D-PAD 상하로 우측 트랙 속도 배율 조절 (0.1~2.0)
         if (ctl->dpad() == DPAD_UP) {
             rightTrackMultiplier = constrain(rightTrackMultiplier + 0.02, 0.1, 2.0);
