@@ -119,7 +119,7 @@ constexpr unsigned long blinkInterval = 100; // 100ms 간격으로 깜빡임
 // 포신 발사 관련 변수
 bool cannonFiring = false;
 unsigned long cannonStartTime = 0;
-constexpr unsigned long cannonDuration = 500; // 500ms 동안 포신 당김
+constexpr unsigned long cannonDuration = 200; // 200ms 동안 포신 당김
 
 // 기관총 발사 관련 변수
 bool machineGunFiring = false;
@@ -230,12 +230,14 @@ void setMotorSpeed(const MotorConfig *motor, int speed) {
 }
 
 // 포 마운트 서보 모터 제어 함수
-void setCannonMountAngle(int angle) {
+void setCannonMountAngle(const int angle) {
+  ESP_LOGD(MAIN_TAG, "Cannon-Mount Angle %3d degree", angle);
   cannonMountServo.write(angle);
 }
 
 // 포신 서보 모터 제어 함수
-void setCannonAngle(int angle) {
+void setCannonAngle(const int angle) {
+  ESP_LOGD(MAIN_TAG, "Cannon Angle %3d degree", angle);
   cannonServo.write(angle);
 }
 
@@ -397,10 +399,10 @@ void processGamepad(const ControllerPtr ctl) {
 
   // D-PAD 상하로 포 마운트 각도 제어
   if (ctl->dpad() == DPAD_UP) {
-    cannonMountAngle = constrain(cannonMountAngle + 2, 0, 180); // 위로 올림
+    cannonMountAngle = constrain(cannonMountAngle + 2, 75, 110); // 위로 올림
     setCannonMountAngle(cannonMountAngle);
   } else if (ctl->dpad() == DPAD_DOWN) {
-    cannonMountAngle = constrain(cannonMountAngle - 2, 0, 180); // 아래로 내림
+    cannonMountAngle = constrain(cannonMountAngle - 2, 75, 110); // 아래로 내림
     setCannonMountAngle(cannonMountAngle);
   }
 
@@ -418,7 +420,7 @@ void processGamepad(const ControllerPtr ctl) {
     ctl->playDualRumble(0, 400, 0xFF, 0x0);
 
     // 포신 당기기
-    setCannonAngle(45); // 포신을 아래로 당김
+    setCannonAngle(cannonAngle - 90); // 포신을 아래로 당김
 
     // 효과음 2 재생
     myDFPlayer.play(SOUND_CANNON);
