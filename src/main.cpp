@@ -112,7 +112,6 @@ MotorConfig turretMotor = {
 
 // LED 상태
 bool headlightOn = false;
-bool ledBlinking = false;
 unsigned long lastBlinkTime = 0;
 constexpr unsigned long blinkInterval = 100; // 100ms 간격으로 깜빡임
 
@@ -414,7 +413,8 @@ void processGamepad(const ControllerPtr ctl) {
   if (buttonB && !cannonFiring && !machineGunFiring) {
     cannonFiring = true;
     cannonStartTime = millis();
-    ledBlinking = true;
+    // 포신 발사 중에는 LED를 지속 점등
+    digitalWrite(CANNON_LED_PIN, HIGH);
 
     // 게임 패드 진동
     ctl->playDualRumble(0, 400, 0xFF, 0x0);
@@ -430,7 +430,6 @@ void processGamepad(const ControllerPtr ctl) {
   if (buttonA && !machineGunFiring && !cannonFiring) {
     machineGunFiring = true;
     machineGunStartTime = millis();
-    ledBlinking = true;
 
     // 게임 패드 진동
     ctl->playDualRumble(0, 300, 0xFF, 0x0);
@@ -627,7 +626,6 @@ void processCannonFiring() {
 
       // 기관총이 발사 중이 아닌 경우에만 LED 점멸 중단
       if (!machineGunFiring) {
-        ledBlinking = false;
         digitalWrite(CANNON_LED_PIN, LOW);
       }
 
@@ -651,37 +649,10 @@ void processMachineGunFiring() {
       // 기관총 발사 완료
       machineGunFiring = false;
 
-      // 포신이 발사 중이 아닌 경우에만 LED 점멸 중단
-      if (!cannonFiring) {
-        ledBlinking = false;
-        digitalWrite(CANNON_LED_PIN, LOW);
-      }
-
       // 효과음 1 재생 재개 (게임패드가 연결되어 있지 않은 경우)
       if (!gamepadConnected && !cannonFiring) {
         myDFPlayer.play(SOUND_IDLE);
         lastIdleSoundTime = millis();
-      }
-    }
-  }
-}
-
-// LED 깜빡임 처리
-void processLEDBlinking() {
-  if (ledBlinking) {
-    const unsigned long currentTime = millis();
-
-    // 기관총 발사 중일 때는 500ms 간격으로 점멸
-    if (machineGunFiring) {
-      if (currentTime - lastBlinkTime >= 500) {
-        digitalWrite(CANNON_LED_PIN, !digitalRead(CANNON_LED_PIN));
-        lastBlinkTime = currentTime;
-      }
-    } else {
-      // 포신 발사 중일 때는 기존 100ms 간격으로 점멸
-      if (currentTime - lastBlinkTime >= blinkInterval) {
-        digitalWrite(CANNON_LED_PIN, !digitalRead(CANNON_LED_PIN));
-        lastBlinkTime = currentTime;
       }
     }
   }
@@ -820,9 +791,6 @@ void loop() {
 
   // 기관총 발사 처리
   processMachineGunFiring();
-
-  // LED 깜빡임 처리
-  processLEDBlinking();
 
   // 효과음 반복 재생 처리
   processIdleSound();
