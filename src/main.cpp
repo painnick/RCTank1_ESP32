@@ -9,8 +9,8 @@
 static auto MAIN_TAG = "RC_TANK";
 
 // 핀 정의
-#define DFPLAYER_RX 33
-#define DFPLAYER_TX 32
+#define DFPLAYER_RX 32
+#define DFPLAYER_TX 33
 #define LEFT_TRACK_IN1 25
 #define LEFT_TRACK_IN2 26
 #define RIGHT_TRACK_IN1 27
