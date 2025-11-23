@@ -6,6 +6,11 @@
 #include <esp_log.h>
 #include <driver/mcpwm.h>
 
+#ifdef DISABLE_BROWNOUT_DETECTOR
+#include <driver/rtc_io.h>
+#include <soc/rtc_cntl_reg.h>
+#endif
+
 static auto MAIN_TAG = "RC_TANK";
 
 // 핀 정의
@@ -683,6 +688,10 @@ void processControllers() {
 // 설정 함수
 void setup() {
   ESP_LOGI(MAIN_TAG, "RC Tank Initialization...");
+
+#ifdef DISABLE_BROWNOUT_DETECTOR
+  WRITE_PERI_REG(RTC_CNTL_BROWN_OUT_REG, 0); // Disable Brownout Detector
+#endif
 
   // Brownout을 피하기 위해 CPU 클록을 160 MHz로 낮춤
   setCpuFrequencyMhz(160);
