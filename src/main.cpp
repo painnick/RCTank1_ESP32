@@ -123,7 +123,8 @@ constexpr unsigned long blinkInterval = 100; // 100ms 간격으로 깜빡임
 // 포신 발사 관련 변수
 bool cannonFiring = false;
 unsigned long cannonStartTime = 0;
-constexpr unsigned long cannonDuration = 1000; // 1초 동안 포신 당김
+constexpr unsigned long cannonDuration = 1000; // 1초 동안 포신 당김 (재발사 방지 쿨타임 역할)
+constexpr unsigned long cannonLedDuration = 200; // LED는 200ms만 켜짐
 
 // 기관총 발사 관련 변수
 bool machineGunFiring = false;
@@ -421,14 +422,14 @@ void processGamepad(const ControllerPtr ctl) {
     // 포신 발사 중에는 LED를 지속 점등
     digitalWrite(CANNON_LED_PIN, HIGH);
 
+    // 효과음 2 재생
+    myDFPlayer.play(SOUND_CANNON);
+
     // 게임 패드 진동
     ctl->playDualRumble(0, 400, 0xFF, 0x0);
 
     // 포신 당기기
     setCannonAngle(cannonAngle - 90); // 포신을 아래로 당김
-
-    // 효과음 2 재생
-    myDFPlayer.play(SOUND_CANNON);
   }
 
   // A 버튼으로 기관총 발사
@@ -625,14 +626,18 @@ void processGamepad(const ControllerPtr ctl) {
 void processCannonFiring() {
   if (cannonFiring) {
     const unsigned long currentTime = millis();
+    
+    // LED 제어: 200ms가 지나면 끔
+    if (currentTime - cannonStartTime >= cannonLedDuration) {
+       digitalWrite(CANNON_LED_PIN, LOW);
+    }
+
     if (currentTime - cannonStartTime >= cannonDuration) {
-      // 포신 발사 완료
+      // 포신 발사 완료 (쿨타임 종료)
       cannonFiring = false;
 
-      // 기관총이 발사 중이 아닌 경우에만 LED 점멸 중단
-      if (!machineGunFiring) {
-        digitalWrite(CANNON_LED_PIN, LOW);
-      }
+      // LED가 혹시 켜져있다면 확실히 끔 (안전장치)
+      digitalWrite(CANNON_LED_PIN, LOW);
 
       // 포신을 원래 각도로 복원
       setCannonAngle(cannonAngle);
