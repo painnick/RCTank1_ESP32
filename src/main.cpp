@@ -404,10 +404,10 @@ void processGamepad(const ControllerPtr ctl) {
 
   // D-PAD 상하로 포 마운트 각도 제어
   if (ctl->dpad() == DPAD_UP) {
-    cannonMountAngle = constrain(cannonMountAngle + 2, 75, 135); // 위로 올림
+    cannonMountAngle = constrain(cannonMountAngle + 2, 75, 160); // 위로 올림
     setCannonMountAngle(cannonMountAngle);
   } else if (ctl->dpad() == DPAD_DOWN) {
-    cannonMountAngle = constrain(cannonMountAngle - 2, 75, 135); // 아래로 내림
+    cannonMountAngle = constrain(cannonMountAngle - 2, 75, 160); // 아래로 내림
     setCannonMountAngle(cannonMountAngle);
   }
 
