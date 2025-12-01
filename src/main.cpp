@@ -75,7 +75,7 @@ int leftTrackPWM = 0;
 int rightTrackPWM = 0;
 int turretPWM = 0;
 int cannonMountAngle = 90; // 포 마운트 기본 각도 (중앙)
-int cannonAngle = 90; // 포신 기본 각도 (중앙)
+constexpr int cannonAngle = 90; // 포신 기본 각도 (중앙)
 
 // 버튼 스왑 설정
 bool buttonSwapEnabled = false; // A/B, X/Y 버튼 스왑 여부
@@ -428,8 +428,25 @@ void processGamepad(const ControllerPtr ctl) {
     // 게임 패드 진동
     ctl->playDualRumble(0, 400, 0xFF, 0x0);
 
+    cannonServo.attach(CANNON_SERVO_PIN); // 포신 서보 모터
+    delay(100);
     // 포신 당기기
     setCannonAngle(cannonAngle - 90); // 포신을 아래로 당김
+
+    delay(200);
+
+    setMotorSpeed(&leftTrackMotor, 80);
+    setMotorSpeed(&rightTrackMotor, 80);
+
+    delay(100);
+
+    setCannonAngle(cannonAngle); // 포신을 원래 위치로 복원
+
+    setMotorSpeed(&leftTrackMotor, 0);
+    setMotorSpeed(&rightTrackMotor, 0);
+
+    delay(300);
+    cannonServo.detach(); // 포신 서보 모터
   }
 
   // A 버튼으로 기관총 발사
@@ -626,7 +643,7 @@ void processGamepad(const ControllerPtr ctl) {
 void processCannonFiring() {
   if (cannonFiring) {
     const unsigned long currentTime = millis();
-    
+
     // LED 제어: 200ms가 지나면 끔
     if (currentTime - cannonStartTime >= cannonLedDuration) {
        digitalWrite(CANNON_LED_PIN, LOW);
@@ -745,7 +762,7 @@ void setup() {
 
   // 서보 모터 초기화
   cannonMountServo.attach(CANNON_MOUNT_SERVO_PIN); // 포 마운트 서보 모터
-  cannonServo.attach(CANNON_SERVO_PIN); // 포신 서보 모터
+  // cannonServo.attach(CANNON_SERVO_PIN); // 포신 서보 모터
 
   // 서보 모터 초기 위치 설정
   setCannonMountAngle(cannonMountAngle);
