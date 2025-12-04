@@ -534,6 +534,7 @@ void processGamepad(const ControllerPtr ctl) {
     headlightOn = !headlightOn;
     digitalWrite(HEADLIGHT_PIN, headlightOn ? HIGH : LOW);
     l2r2ButtonPressed = true;
+    ESP_LOGI(MAIN_TAG, "Headlight is %s", l2r2ButtonPressed ? "On" : "Off");
   } else if (!ctl->l2() || !ctl->r2()) {
     l2r2ButtonPressed = false;
   }
