@@ -129,7 +129,7 @@ constexpr unsigned long cannonLedDuration = 200; // LED는 200ms만 켜짐
 // 기관총 발사 관련 변수
 bool machineGunFiring = false;
 unsigned long machineGunStartTime = 0;
-constexpr unsigned long machineGunDuration = 1000; // 1초간 기관총 발사
+constexpr unsigned long machineGunDuration = 600; // 1초간 기관총 발사
 
 // 효과음 파일 번호
 #define SOUND_IDLE 1
