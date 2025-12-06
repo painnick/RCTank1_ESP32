@@ -34,7 +34,7 @@ static auto MAIN_TAG = "RC_TANK";
 #define TURRET_TIMER MCPWM_TIMER_2
 
 // 스틱 데드존(-511~512)
-#define STICK_INPUT_MIN -511
+#define STICK_INPUT_MIN (-511)
 #define STICK_INPUT_MAX 512
 #define STICK_DEAD_ZONE 80
 
@@ -333,9 +333,9 @@ void processGamepad(const ControllerPtr ctl) {
   // D-PAD 좌우로 터렛 제어
   int turretSpeed = 0;
   if (ctl->dpad() == DPAD_LEFT) {
-    turretSpeed = -255; // 좌측 회전
+    turretSpeed = STICK_INPUT_MIN; // 좌측 회전
   } else if (ctl->dpad() == DPAD_RIGHT) {
-    turretSpeed = 255; // 우측 회전
+    turretSpeed = STICK_INPUT_MAX; // 우측 회전
   }
   setMotorSpeed(&turretMotor, turretSpeed);
 
