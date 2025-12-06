@@ -35,8 +35,16 @@ static auto MAIN_TAG = "RC_TANK";
 #define RIGHT_TRACK_TIMER MCPWM_TIMER_1
 #define TURRET_TIMER MCPWM_TIMER_2
 
-// DC 모터 최소 속도 임계값 (80 미만은 처리하지 않음)
-#define MOTOR_MIN_SPEED_THRESHOLD 80
+// 스틱 데드존(-511~512)
+#define STICK_INPUT_MIN -511
+#define STICK_INPUT_MAX 512
+#define STICK_DEAD_ZONE 80
+
+// 모터 듀티(0~100) 데드존
+#define MOTOR_DUTY_MIN 0
+#define MOTOR_DUTY_MAX 100
+#define MOTOR_DEAD_ZONE 60
+constexpr int MOTOR_ACTIVE_DUTY = 100 - MOTOR_DEAD_ZONE;
 
 // 모터 설정 구조체
 typedef struct {
@@ -66,19 +74,19 @@ constexpr unsigned long idleSoundInterval = 13000; // 13초마다 효과음 1 �
 
 // 서보 모터 객체
 Servo cannonMountServo; // 포 마운트 서보 모터
-Servo cannonServo;      // 포신 서보 모터
+Servo cannonServo; // 포신 서보 모터
 
 // 모터 제어 변수
 
 int leftTrackPWM = 0;
 int rightTrackPWM = 0;
 int turretPWM = 0;
-int cannonMountAngle = 90;      // 포 마운트 기본 각도 (중앙)
+int cannonMountAngle = 90; // 포 마운트 기본 각도 (중앙)
 constexpr int cannonAngle = 90; // 포신 기본 각도 (중앙)
 
 // 볼륨 제어 변수
-int currentVolume = 20;     // 현재 볼륨 (1-30)
-int tempVolume = 20;        // 임시 볼륨 (버튼을 누르고 있는 동안 사용)
+int currentVolume = 20; // 현재 볼륨 (1-30)
+int tempVolume = 20; // 임시 볼륨 (버튼을 누르고 있는 동안 사용)
 bool volumeChanged = false; // 볼륨이 변경되었는지 확인
 
 // DC 모터 이전 속도 값 저장 변수
@@ -87,23 +95,29 @@ int prevRightTrackSpeed = 0;
 int prevTurretSpeed = 0;
 
 // 모터 설정 구조체 인스턴스
-MotorConfig leftTrackMotor = {.in1Pin = LEFT_TRACK_IN1,
-                              .in2Pin = LEFT_TRACK_IN2,
-                              .unit = MCPWM_UNIT,
-                              .timer = LEFT_TRACK_TIMER,
-                              .prevSpeed = &prevLeftTrackSpeed};
+MotorConfig leftTrackMotor = {
+  .in1Pin = LEFT_TRACK_IN1,
+  .in2Pin = LEFT_TRACK_IN2,
+  .unit = MCPWM_UNIT,
+  .timer = LEFT_TRACK_TIMER,
+  .prevSpeed = &prevLeftTrackSpeed
+};
 
-MotorConfig rightTrackMotor = {.in1Pin = RIGHT_TRACK_IN1,
-                               .in2Pin = RIGHT_TRACK_IN2,
-                               .unit = MCPWM_UNIT,
-                               .timer = RIGHT_TRACK_TIMER,
-                               .prevSpeed = &prevRightTrackSpeed};
+MotorConfig rightTrackMotor = {
+  .in1Pin = RIGHT_TRACK_IN1,
+  .in2Pin = RIGHT_TRACK_IN2,
+  .unit = MCPWM_UNIT,
+  .timer = RIGHT_TRACK_TIMER,
+  .prevSpeed = &prevRightTrackSpeed
+};
 
-MotorConfig turretMotor = {.in1Pin = TURRET_IN1,
-                           .in2Pin = TURRET_IN2,
-                           .unit = MCPWM_UNIT,
-                           .timer = TURRET_TIMER,
-                           .prevSpeed = &prevTurretSpeed};
+MotorConfig turretMotor = {
+  .in1Pin = TURRET_IN1,
+  .in2Pin = TURRET_IN2,
+  .unit = MCPWM_UNIT,
+  .timer = TURRET_TIMER,
+  .prevSpeed = &prevTurretSpeed
+};
 
 // LED 상태
 bool headlightOn = false;
@@ -135,8 +149,10 @@ void onConnectedController(const ControllerPtr ctl) {
     if (myControllers[i] == nullptr) {
       ESP_LOGI(MAIN_TAG, "Gamepad connected, index=%d", i);
       ControllerProperties properties = ctl->getProperties();
-      ESP_LOGI(MAIN_TAG, "Controller model: %s, VID=0x%04x, PID=0x%04x",
-               ctl->getModelName().c_str(), properties.vendor_id,
+      ESP_LOGI(MAIN_TAG,
+               "Controller model: %s, VID=0x%04x, PID=0x%04x",
+               ctl->getModelName().c_str(),
+               properties.vendor_id,
                properties.product_id);
       myControllers[i] = ctl;
       foundEmptySlot = true;
@@ -185,30 +201,51 @@ void onDisconnectedController(ControllerPtr ctl) {
 }
 
 // DC 모터 제어 함수 (MCPWM 사용, 속도 변화가 없으면 호출 무시)
-void setMotorSpeed(const MotorConfig *motor, int speed) {
-  // 최소 속도 임계값 적용
-  if (abs(speed) < MOTOR_MIN_SPEED_THRESHOLD) {
-    speed = 0;
+// stick : -511~512
+// motor duty : 0~100
+void setMotorSpeed(const MotorConfig *motor, const int stick) {
+  int duty = 0;
+  const int absStick = abs(stick);
+  if (absStick < STICK_DEAD_ZONE) {
+    duty = MOTOR_DUTY_MIN;
+  } else if (absStick > 500) {
+    duty = stick > 0 ? MOTOR_DUTY_MAX : -MOTOR_DUTY_MAX;
+  } else {
+    const auto sanitizedStick = stick - STICK_DEAD_ZONE;
+    duty = map(sanitizedStick,
+               STICK_INPUT_MIN + STICK_DEAD_ZONE,
+               STICK_INPUT_MAX - STICK_DEAD_ZONE,
+               MOTOR_ACTIVE_DUTY * -1,
+               MOTOR_ACTIVE_DUTY);
+    if (duty > 0)
+      duty += MOTOR_ACTIVE_DUTY;
+    else
+      duty -= MOTOR_ACTIVE_DUTY;
   }
 
   // 속도 변화가 없으면 호출 무시
-  if (speed == *(motor->prevSpeed)) {
+  if (duty == *(motor->prevSpeed)) {
     return;
   }
 
   ESP_LOGD(MAIN_TAG,
-           "setMotorSpeed IN1:%d IN2:%d Unit:%d Timer:%d Speed:%d (prev:%d)",
-           motor->in1Pin, motor->in2Pin, motor->unit, motor->timer, speed,
+           "setMotorSpeed IN1:%d IN2:%d Unit:%d Timer:%d Stick:%d Duty:%3d (prev:%d)",
+           motor->in1Pin,
+           motor->in2Pin,
+           motor->unit,
+           motor->timer,
+           stick,
+           duty,
            *(motor->prevSpeed));
 
-  if (speed > 0) {
+  if (duty > 0) {
     // 정방향 회전
-    mcpwm_set_duty(motor->unit, motor->timer, MCPWM_OPR_A, speed);
+    mcpwm_set_duty(motor->unit, motor->timer, MCPWM_OPR_A, duty);
     mcpwm_set_duty(motor->unit, motor->timer, MCPWM_OPR_B, 0);
-  } else if (speed < 0) {
+  } else if (duty < 0) {
     // 역방향 회전
     mcpwm_set_duty(motor->unit, motor->timer, MCPWM_OPR_A, 0);
-    mcpwm_set_duty(motor->unit, motor->timer, MCPWM_OPR_B, -speed);
+    mcpwm_set_duty(motor->unit, motor->timer, MCPWM_OPR_B, -duty);
   } else {
     // 정지
     mcpwm_set_duty(motor->unit, motor->timer, MCPWM_OPR_A, 0);
@@ -216,7 +253,7 @@ void setMotorSpeed(const MotorConfig *motor, int speed) {
   }
 
   // 현재 속도를 이전 속도로 저장
-  *(motor->prevSpeed) = speed;
+  *(motor->prevSpeed) = duty;
 }
 
 // 포 마운트 서보 모터 제어 함수
@@ -273,26 +310,26 @@ void resetEEPROMAndRestart() {
 }
 
 void dumpGamepad(ControllerPtr ctl) {
-  ESP_LOGD(MAIN_TAG,
-      "0x%02x %s %s %s %s %s %s %s %s %s %s %s %s %s %s misc: 0x%02x LY:%3d RY:%3d",
-      ctl->dpad(),
-      ctl->a() ? "A" : "-",
-      ctl->b() ? "B" : "-",
-      ctl->x() ? "X" : "-",
-      ctl->y() ? "Y" : "-",
-      ctl->l1() ? "L1" : "--",
-      ctl->r1() ? "R1" : "--",
-      ctl->l2() ? "L2" : "--",
-      ctl->r2() ? "R2" : "--",
-      ctl->thumbL() ? "ThumbL" : "------",
-      ctl->thumbR() ? "ThumbR" : "------",
-      ctl->miscStart() ? "Start" : "------",
-      ctl->miscSelect() ? "Select" : "------",
-      ctl->miscSystem() ? "System" : "------",
-      ctl->miscCapture() ? "Capture" : "------",
-      ctl->miscButtons(),
-      ctl->axisY(),
-      ctl->axisRY()
+  ESP_LOGV(MAIN_TAG,
+           "0x%02x %s %s %s %s %s %s %s %s %s %s %s %s %s %s misc: 0x%02x LY:%3d RY:%3d",
+           ctl->dpad(),
+           ctl->a() ? "A" : "-",
+           ctl->b() ? "B" : "-",
+           ctl->x() ? "X" : "-",
+           ctl->y() ? "Y" : "-",
+           ctl->l1() ? "L1" : "--",
+           ctl->r1() ? "R1" : "--",
+           ctl->l2() ? "L2" : "--",
+           ctl->r2() ? "R2" : "--",
+           ctl->thumbL() ? "ThumbL" : "------",
+           ctl->thumbR() ? "ThumbR" : "------",
+           ctl->miscStart() ? "Start" : "------",
+           ctl->miscSelect() ? "Select" : "------",
+           ctl->miscSystem() ? "System" : "------",
+           ctl->miscCapture() ? "Capture" : "------",
+           ctl->miscButtons(),
+           ctl->axisY(),
+           ctl->axisRY()
   );
 }
 
@@ -304,29 +341,9 @@ void processGamepad(const ControllerPtr ctl) {
   int leftStickY = ctl->axisY();
   int rightStickY = ctl->axisRY();
 
-  // 데드존 설정
-  if (abs(leftStickY) < 50)
-    leftStickY = 0;
-  if (abs(rightStickY) < 50)
-    rightStickY = 0;
-
-  // 좌측 스틱 Y축으로 좌측 트랙 전후진 제어
-  int leftTrackSpeed = map(leftStickY, -512, 512, -255, 255);
-
-  // 우측 스틱 Y축으로 우측 트랙 전후진 제어
-  int rightTrackSpeed = map(rightStickY, -512, 512, -255, 255);
-
-  // 속도 제한
-  leftTrackSpeed = constrain(leftTrackSpeed, -255, 255);
-  rightTrackSpeed = constrain(rightTrackSpeed, -255, 255);
-
-  // 최종 속도 제한
-  leftTrackSpeed = constrain(leftTrackSpeed, -255, 255);
-  rightTrackSpeed = constrain(rightTrackSpeed, -255, 255);
-
   // 모터 제어
-  setMotorSpeed(&leftTrackMotor, leftTrackSpeed);
-  setMotorSpeed(&rightTrackMotor, rightTrackSpeed);
+  setMotorSpeed(&leftTrackMotor, leftStickY);
+  setMotorSpeed(&rightTrackMotor, rightStickY);
 
   // D-PAD로 터렛과 포 마운트 제어
   // D-PAD 좌우로 터렛 제어
@@ -474,10 +491,6 @@ void processGamepad(const ControllerPtr ctl) {
     l2r2ButtonPressed = false;
   }
 
-  // X/Y 버튼 처리
-  const bool buttonX = ctl->x();
-  const bool buttonY = ctl->y();
-
   // Select + Start 버튼 3초 이상 동시 누름으로 EEPROM 초기화 및 재시작
   static bool selectStartPressed = false;
   static unsigned long selectStartStartTime = 0;
@@ -486,14 +499,16 @@ void processGamepad(const ControllerPtr ctl) {
     if (!selectStartPressed) {
       selectStartPressed = true;
       selectStartStartTime = millis();
-      ESP_LOGI(MAIN_TAG, "Select + Start 버튼이 눌렸습니다. 3초간 유지하면 "
-                         "EEPROM 초기화가 시작됩니다.");
+      ESP_LOGI(MAIN_TAG,
+               "Select + Start 버튼이 눌렸습니다. 3초간 유지하면 "
+               "EEPROM 초기화가 시작됩니다.");
     } else {
       constexpr unsigned long selectStartHoldDuration = 3000;
       // 버튼이 계속 눌려있는 상태에서 3초 경과 확인
       if (millis() - selectStartStartTime >= selectStartHoldDuration) {
-        ESP_LOGI(MAIN_TAG, "Select + Start 버튼을 3초간 누르셨습니다. EEPROM "
-                           "초기화를 시작합니다.");
+        ESP_LOGI(MAIN_TAG,
+                 "Select + Start 버튼을 3초간 누르셨습니다. EEPROM "
+                 "초기화를 시작합니다.");
 
         // 게임패드 진동으로 확인 신호
         ctl->playDualRumble(0, 800, 0xFF, 0x0);
@@ -603,8 +618,8 @@ void setup() {
   // MCPWM 설정
   mcpwm_config_t pwm_config;
   pwm_config.frequency = 5000; // 5kHz
-  pwm_config.cmpr_a = 0;       // 초기 듀티 사이클 0%
-  pwm_config.cmpr_b = 0;       // 초기 듀티 사이클 0%
+  pwm_config.cmpr_a = 0; // 초기 듀티 사이클 0%
+  pwm_config.cmpr_b = 0; // 초기 듀티 사이클 0%
   pwm_config.counter_mode = MCPWM_UP_COUNTER;
   pwm_config.duty_mode = MCPWM_DUTY_MODE_0;
 
@@ -666,8 +681,14 @@ void setup() {
 
   ESP_LOGI(MAIN_TAG, "Firmware version: %s", BP32.firmwareVersion());
   const uint8_t *addr = BP32.localBdAddress();
-  ESP_LOGI(MAIN_TAG, "BD address: %2X:%2X:%2X:%2X:%2X:%2X", addr[0], addr[1],
-           addr[2], addr[3], addr[4], addr[5]);
+  ESP_LOGI(MAIN_TAG,
+           "BD address: %2X:%2X:%2X:%2X:%2X:%2X",
+           addr[0],
+           addr[1],
+           addr[2],
+           addr[3],
+           addr[4],
+           addr[5]);
 
   ESP_LOGI(MAIN_TAG, "RC Tank Initialization Complete!");
 }
