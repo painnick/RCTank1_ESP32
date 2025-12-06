@@ -134,12 +134,12 @@ constexpr unsigned long machineGunDuration = 600; // 1초간 기관총 발사
 #define SOUND_CONNECTED 4
 
 // 게임패드 연결 콜백
-void onConnectedController(const ControllerPtr ctl) {
+void onConnectedController(ControllerPtr ctl) {
   bool foundEmptySlot = false;
   for (int i = 0; i < BP32_MAX_GAMEPADS; i++) {
     if (myControllers[i] == nullptr) {
       ESP_LOGI(MAIN_TAG, "Gamepad connected, index=%d", i);
-      ControllerProperties properties = ctl->getProperties();
+      const ControllerProperties properties = ctl->getProperties();
       ESP_LOGI(MAIN_TAG, "Controller model: %s, VID=0x%04x, PID=0x%04x",
                ctl->getModelName().c_str(),
                properties.vendor_id,
@@ -172,8 +172,8 @@ void onDisconnectedController(ControllerPtr ctl) {
 
   // 모든 게임패드가 연결 해제되었는지 확인
   gamepadConnected = false;
-  for (int i = 0; i < BP32_MAX_GAMEPADS; i++) {
-    if (myControllers[i] != nullptr) {
+  for (const auto& myController : myControllers) {
+    if (myController != nullptr) {
       gamepadConnected = true;
       break;
     }
@@ -224,12 +224,12 @@ void setMotorSpeed(const MotorConfig* motor, const int stick) {
 
   if (duty > 0) {
     // 정방향 회전
-    mcpwm_set_duty(motor->unit, motor->timer, MCPWM_OPR_A, duty);
+    mcpwm_set_duty(motor->unit, motor->timer, MCPWM_OPR_A, static_cast<float>(duty));
     mcpwm_set_duty(motor->unit, motor->timer, MCPWM_OPR_B, 0);
   } else if (duty < 0) {
     // 역방향 회전
     mcpwm_set_duty(motor->unit, motor->timer, MCPWM_OPR_A, 0);
-    mcpwm_set_duty(motor->unit, motor->timer, MCPWM_OPR_B, -duty);
+    mcpwm_set_duty(motor->unit, motor->timer, MCPWM_OPR_B, static_cast<float>(-duty));
   } else {
     // 정지
     mcpwm_set_duty(motor->unit, motor->timer, MCPWM_OPR_A, 0);
@@ -319,16 +319,14 @@ void dumpGamepad(ControllerPtr ctl) {
 }
 
 // 게임패드 처리 함수
-void processGamepad(const ControllerPtr ctl) {
+void processGamepad(ControllerPtr ctl) {
   dumpGamepad(ctl);
 
   // 좌측 스틱 Y축으로 좌측 트랙 제어, 우측 스틱 Y축으로 우측 트랙 제어
-  int leftStickY = ctl->axisY();
-  int rightStickY = ctl->axisRY();
 
   // 모터 제어
-  setMotorSpeed(&leftTrackMotor, leftStickY);
-  setMotorSpeed(&rightTrackMotor, rightStickY);
+  setMotorSpeed(&leftTrackMotor, ctl->axisY());
+  setMotorSpeed(&rightTrackMotor, ctl->axisRY());
 
   // D-PAD로 터렛과 포 마운트 제어
   // D-PAD 좌우로 터렛 제어
