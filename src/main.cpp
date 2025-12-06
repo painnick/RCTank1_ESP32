@@ -119,8 +119,7 @@ constexpr unsigned long blinkInterval = 100; // 100ms 간격으로 깜빡임
 // 포신 발사 관련 변수
 bool cannonFiring = false;
 unsigned long cannonStartTime = 0;
-constexpr unsigned long cannonDuration =
-    1000; // 1초 동안 포신 당김 (재발사 방지 쿨타임 역할)
+constexpr unsigned long cannonDuration = 1000; // 1초 동안 포신 당김 (재발사 방지 쿨타임 역할)
 constexpr unsigned long cannonLedDuration = 200; // LED는 200ms만 켜짐
 
 // 기관총 발사 관련 변수
@@ -203,8 +202,10 @@ void setMotorSpeed(const MotorConfig* motor, const int stick) {
     duty = stick > 0 ? MOTOR_DUTY_MAX : -MOTOR_DUTY_MAX;
   } else {
     const auto sanitizedStick = stick - STICK_DEAD_ZONE;
-    duty = map(sanitizedStick, STICK_INPUT_MIN + STICK_DEAD_ZONE,
-               STICK_INPUT_MAX - STICK_DEAD_ZONE, MOTOR_ACTIVE_DUTY * -1,
+    duty = map(sanitizedStick,
+               STICK_INPUT_MIN + STICK_DEAD_ZONE,
+               STICK_INPUT_MAX - STICK_DEAD_ZONE,
+               MOTOR_ACTIVE_DUTY * -1,
                MOTOR_ACTIVE_DUTY);
     if (duty > 0)
       duty += MOTOR_ACTIVE_DUTY;
@@ -263,7 +264,7 @@ void loadVolumeSettings() {
   int volume = EEPROM.read(EEPROM_VOLUME_ADDR);
 
   // 기본값 설정 (EEPROM이 초기화되지 않은 경우)
-  if (volume < 1 || volume > 30) {
+  if (volume < 10 || volume > 30) {
     volume = 20; // 기본 볼륨 20
     EEPROM.write(EEPROM_VOLUME_ADDR, volume);
     EEPROM.commit();
@@ -396,23 +397,22 @@ void processGamepad(const ControllerPtr ctl) {
     myDFPlayer.play(SOUND_MACHINEGUN);
   }
 
-  // L1 + (X 또는 Y) 버튼으로 볼륨 조절 (둔감하게 처리)
+  // L1 버튼으로 볼륨 조절 (둔감하게 처리)
   static bool l1ButtonPressed = false;
   static bool r1ButtonPressed = false;
   static unsigned long l1LastChangeTime = 0;
   static unsigned long r1LastChangeTime = 0;
-  constexpr unsigned long volumeChangeInterval =
-      100; // 100ms 간격으로 볼륨 변경
+  constexpr unsigned long volumeChangeInterval = 100; // 100ms 간격으로 볼륨 변경
 
-  // L1 + (X 또는 Y) 버튼으로 볼륨 감소
-  if (ctl->l1() && (ctl->x() || ctl->y())) {
+  // L1 버튼으로 볼륨 감소
+  if (ctl->l1()) {
     if (!l1ButtonPressed) {
       l1ButtonPressed = true;
       tempVolume = currentVolume; // 현재 볼륨을 임시 볼륨으로 복사
       l1LastChangeTime = millis();
     }
 
-    // 볼륨 감소 (1-30 범위, 100ms 간격으로만 변경)
+    // 볼륨 감소 (1-30 범위)
     if (tempVolume > 1 &&
         (millis() - l1LastChangeTime >= volumeChangeInterval)) {
       tempVolume--;
@@ -424,7 +424,7 @@ void processGamepad(const ControllerPtr ctl) {
       l1ButtonPressed = false;
       // L1 버튼을 뗐을 때 볼륨 변경사항 저장
       if (tempVolume != currentVolume) {
-        currentVolume = tempVolume;
+        currentVolume = constrain(tempVolume, 10, 30);
         myDFPlayer.volume(currentVolume); // DFPlayer 볼륨 적용
         volumeChanged = true;
         ESP_LOGI(MAIN_TAG, "Volume change confirmed: %d", currentVolume);
@@ -432,15 +432,15 @@ void processGamepad(const ControllerPtr ctl) {
     }
   }
 
-  // R1 + (X 또는 Y) 버튼으로 볼륨 증가
-  if (ctl->r1() && (ctl->x() || ctl->y())) {
+  // R1 버튼으로 볼륨 증가
+  if (ctl->r1()) {
     if (!r1ButtonPressed) {
       r1ButtonPressed = true;
       tempVolume = currentVolume; // 현재 볼륨을 임시 볼륨으로 복사
       r1LastChangeTime = millis();
     }
 
-    // 볼륨 증가 (1-30 범위, 100ms 간격으로만 변경)
+    // 볼륨 증가 (1-30 범위)
     if (tempVolume < 30 &&
         (millis() - r1LastChangeTime >= volumeChangeInterval)) {
       tempVolume++;
@@ -452,7 +452,7 @@ void processGamepad(const ControllerPtr ctl) {
       r1ButtonPressed = false;
       // R1 버튼을 뗐을 때 볼륨 변경사항 저장
       if (tempVolume != currentVolume) {
-        currentVolume = tempVolume;
+        currentVolume = constrain(tempVolume, 10, 30);
         myDFPlayer.volume(currentVolume); // DFPlayer 볼륨 적용
         volumeChanged = true;
         ESP_LOGI(MAIN_TAG, "Volume change confirmed: %d", currentVolume);
