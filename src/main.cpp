@@ -273,16 +273,27 @@ void resetEEPROMAndRestart() {
 }
 
 void dumpGamepad(ControllerPtr ctl) {
-  ESP_LOGV(MAIN_TAG, "%s %s %s %s %s %s %s %s %s %s %s %s %s %s misc: 0x%02x",
-           ctl->a() ? "A" : "-", ctl->b() ? "B" : "-", ctl->x() ? "X" : "-",
-           ctl->y() ? "Y" : "-", ctl->l1() ? "L1" : "--",
-           ctl->r1() ? "R1" : "--", ctl->l2() ? "L2" : "--",
-           ctl->r2() ? "R2" : "--", ctl->thumbL() ? "ThumbL" : "------",
-           ctl->thumbR() ? "ThumbR" : "------",
-           ctl->miscStart() ? "Start" : "------",
-           ctl->miscSelect() ? "Select" : "------",
-           ctl->miscSystem() ? "System" : "------",
-           ctl->miscCapture() ? "Capture" : "------", ctl->miscButtons());
+  ESP_LOGD(MAIN_TAG,
+      "0x%02x %s %s %s %s %s %s %s %s %s %s %s %s %s %s misc: 0x%02x LY:%3d RY:%3d",
+      ctl->dpad(),
+      ctl->a() ? "A" : "-",
+      ctl->b() ? "B" : "-",
+      ctl->x() ? "X" : "-",
+      ctl->y() ? "Y" : "-",
+      ctl->l1() ? "L1" : "--",
+      ctl->r1() ? "R1" : "--",
+      ctl->l2() ? "L2" : "--",
+      ctl->r2() ? "R2" : "--",
+      ctl->thumbL() ? "ThumbL" : "------",
+      ctl->thumbR() ? "ThumbR" : "------",
+      ctl->miscStart() ? "Start" : "------",
+      ctl->miscSelect() ? "Select" : "------",
+      ctl->miscSystem() ? "System" : "------",
+      ctl->miscCapture() ? "Capture" : "------",
+      ctl->miscButtons(),
+      ctl->axisY(),
+      ctl->axisRY()
+  );
 }
 
 // 게임패드 처리 함수
