@@ -1,10 +1,11 @@
 #include <Arduino.h>
 #include <Bluepad32.h>
 #include <DFPlayerMini_Fast.h>
-#include <ESP32Servo.h>
 #include <EEPROM.h>
-#include <esp_log.h>
+#include <ESP32Servo.h>
 #include <driver/mcpwm.h>
+#include <esp_log.h>
+
 
 #ifdef DISABLE_BROWNOUT_DETECTOR
 #include <driver/rtc_io.h>
@@ -24,7 +25,8 @@ static auto MAIN_TAG = "RC_TANK";
 #define TURRET_IN2 21
 #define CANNON_LED_PIN 4
 #define HEADLIGHT_PIN 16
-#define CANNON_MOUNT_SERVO_PIN 19   // 포 마운트 서보 모터 핀 (우측 Y축으로 각도 조절)
+#define CANNON_MOUNT_SERVO_PIN                                                 \
+  19                        // 포 마운트 서보 모터 핀 (우측 Y축으로 각도 조절)
 #define CANNON_SERVO_PIN 18 // 포신 서보 모터 핀 (A 버튼으로 당기기)
 
 // MCPWM 설정 (모든 모터는 MCPWM_UNIT_0 사용)
@@ -46,8 +48,7 @@ typedef struct {
 } MotorConfig;
 
 // EEPROM 주소
-#define EEPROM_LEFT_SPEED_ADDR 0
-#define EEPROM_RIGHT_SPEED_ADDR 1
+
 #define EEPROM_VOLUME_ADDR 4
 
 // EEPROM 초기화 플래그
@@ -68,8 +69,7 @@ Servo cannonMountServo; // 포 마운트 서보 모터
 Servo cannonServo;      // 포신 서보 모터
 
 // 모터 제어 변수
-float leftTrackMultiplier = 1.0;  // 좌측 트랙 속도 배율 (0.1~2.0)
-float rightTrackMultiplier = 1.0; // 우측 트랙 속도 배율 (0.1~2.0)
+
 int leftTrackPWM = 0;
 int rightTrackPWM = 0;
 int turretPWM = 0;
@@ -231,44 +231,6 @@ void setCannonAngle(const int angle) {
   cannonServo.write(angle);
 }
 
-// EEPROM에서 속도 배율 값 읽기
-void loadSpeedSettings() {
-  // EEPROM에서 배율 값을 읽기 (0.1~2.0 범위를 10~200으로 저장)
-  int leftMultiplierInt = EEPROM.read(EEPROM_LEFT_SPEED_ADDR);
-  int rightMultiplierInt = EEPROM.read(EEPROM_RIGHT_SPEED_ADDR);
-
-  // 기본값 설정 (EEPROM이 초기화되지 않은 경우)
-  if (leftMultiplierInt == 0 || leftMultiplierInt > 200) {
-    leftMultiplierInt = 100; // 1.0을 100으로 저장
-    EEPROM.write(EEPROM_LEFT_SPEED_ADDR, leftMultiplierInt);
-  }
-  if (rightMultiplierInt == 0 || rightMultiplierInt > 200) {
-    rightMultiplierInt = 100; // 1.0을 100으로 저장
-    EEPROM.write(EEPROM_RIGHT_SPEED_ADDR, rightMultiplierInt);
-  }
-  EEPROM.commit();
-
-  // 정수 값을 배율로 변환 (100 = 1.0)
-  leftTrackMultiplier = leftMultiplierInt / 100.0;
-  rightTrackMultiplier = rightMultiplierInt / 100.0;
-
-  ESP_LOGI(MAIN_TAG, "Loaded speed multipliers: left=%.1f, right=%.1f",
-           leftTrackMultiplier, rightTrackMultiplier);
-}
-
-// EEPROM에 속도 배율 값 저장
-void saveSpeedSettings() {
-  // 배율을 정수로 변환하여 저장 (1.0 = 100)
-  const int leftMultiplierInt = static_cast<int>(leftTrackMultiplier * 100);
-  const int rightMultiplierInt = static_cast<int>(rightTrackMultiplier * 100);
-
-  EEPROM.write(EEPROM_LEFT_SPEED_ADDR, leftMultiplierInt);
-  EEPROM.write(EEPROM_RIGHT_SPEED_ADDR, rightMultiplierInt);
-  EEPROM.commit();
-  ESP_LOGI(MAIN_TAG, "Speed multipliers saved: left=%.1f, right=%.1f",
-           leftTrackMultiplier, rightTrackMultiplier);
-}
-
 // 볼륨 설정 저장
 void saveVolumeSettings() {
   EEPROM.write(EEPROM_VOLUME_ADDR, currentVolume);
@@ -346,10 +308,6 @@ void processGamepad(const ControllerPtr ctl) {
   // 속도 제한
   leftTrackSpeed = constrain(leftTrackSpeed, -255, 255);
   rightTrackSpeed = constrain(rightTrackSpeed, -255, 255);
-
-  // 배율 적용
-  leftTrackSpeed = static_cast<int>(leftTrackSpeed * leftTrackMultiplier);
-  rightTrackSpeed = static_cast<int>(rightTrackSpeed * rightTrackMultiplier);
 
   // 최종 속도 제한
   leftTrackSpeed = constrain(leftTrackSpeed, -255, 255);
@@ -509,44 +467,6 @@ void processGamepad(const ControllerPtr ctl) {
   const bool buttonX = ctl->x();
   const bool buttonY = ctl->y();
 
-  // X 버튼 + D-PAD Y축으로 좌측 트랙 속도 배율 설정
-  static bool xButtonPressed = false;
-  if (buttonX) {
-    if (!xButtonPressed) {
-      xButtonPressed = true;
-    }
-
-    // D-PAD 상하로 좌측 트랙 속도 배율 조절 (0.1~2.0)
-    if (ctl->dpad() == DPAD_UP) {
-      leftTrackMultiplier = constrain(leftTrackMultiplier + 0.02, 0.1, 2.0);
-      saveSpeedSettings();
-    } else if (ctl->dpad() == DPAD_DOWN) {
-      leftTrackMultiplier = constrain(leftTrackMultiplier - 0.02, 0.1, 2.0);
-      saveSpeedSettings();
-    }
-  } else {
-    xButtonPressed = false;
-  }
-
-  // Y 버튼 + D-PAD Y축으로 우측 트랙 속도 배율 설정
-  static bool yButtonPressed = false;
-  if (buttonY) {
-    if (!yButtonPressed) {
-      yButtonPressed = true;
-    }
-
-    // D-PAD 상하로 우측 트랙 속도 배율 조절 (0.1~2.0)
-    if (ctl->dpad() == DPAD_UP) {
-      rightTrackMultiplier = constrain(rightTrackMultiplier + 0.02, 0.1, 2.0);
-      saveSpeedSettings();
-    } else if (ctl->dpad() == DPAD_DOWN) {
-      rightTrackMultiplier = constrain(rightTrackMultiplier - 0.02, 0.1, 2.0);
-      saveSpeedSettings();
-    }
-  } else {
-    yButtonPressed = false;
-  }
-
   // Select + Start 버튼 3초 이상 동시 누름으로 EEPROM 초기화 및 재시작
   static bool selectStartPressed = false;
   static unsigned long selectStartStartTime = 0;
@@ -555,12 +475,14 @@ void processGamepad(const ControllerPtr ctl) {
     if (!selectStartPressed) {
       selectStartPressed = true;
       selectStartStartTime = millis();
-      ESP_LOGI(MAIN_TAG, "Select + Start 버튼이 눌렸습니다. 3초간 유지하면 EEPROM 초기화가 시작됩니다.");
+      ESP_LOGI(MAIN_TAG, "Select + Start 버튼이 눌렸습니다. 3초간 유지하면 "
+                         "EEPROM 초기화가 시작됩니다.");
     } else {
       constexpr unsigned long selectStartHoldDuration = 3000;
       // 버튼이 계속 눌려있는 상태에서 3초 경과 확인
       if (millis() - selectStartStartTime >= selectStartHoldDuration) {
-        ESP_LOGI(MAIN_TAG, "Select + Start 버튼을 3초간 누르셨습니다. EEPROM 초기화를 시작합니다.");
+        ESP_LOGI(MAIN_TAG, "Select + Start 버튼을 3초간 누르셨습니다. EEPROM "
+                           "초기화를 시작합니다.");
 
         // 게임패드 진동으로 확인 신호
         ctl->playDualRumble(0, 800, 0xFF, 0x0);
@@ -710,7 +632,7 @@ void setup() {
   // 볼륨은 loadVolumeSettings()에서 설정됨
 
   // EEPROM에서 설정 로드
-  loadSpeedSettings();
+
   loadVolumeSettings();
 
   // 효과음 1 재생 시작
