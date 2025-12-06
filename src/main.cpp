@@ -366,10 +366,12 @@ void processGamepad(const ControllerPtr ctl) {
     // 포신 당기기
     setCannonAngle(cannonAngle - 90); // 포신을 아래로 당김
 
-    delay(200);
+    digitalWrite(CANNON_LED_PIN, LOW);
 
-    setMotorSpeed(&leftTrackMotor, 80);
-    setMotorSpeed(&rightTrackMotor, 80);
+    delay(100);
+
+    setMotorSpeed(&leftTrackMotor, 256 + 128);
+    setMotorSpeed(&rightTrackMotor, 256 + 128);
 
     delay(100);
 
@@ -508,20 +510,9 @@ void processCannonFiring() {
   if (cannonFiring) {
     const unsigned long currentTime = millis();
 
-    // LED 제어: 200ms가 지나면 끔
-    if (currentTime - cannonStartTime >= cannonLedDuration) {
-      digitalWrite(CANNON_LED_PIN, LOW);
-    }
-
     if (currentTime - cannonStartTime >= cannonDuration) {
       // 포신 발사 완료 (쿨타임 종료)
       cannonFiring = false;
-
-      // LED가 혹시 켜져있다면 확실히 끔 (안전장치)
-      digitalWrite(CANNON_LED_PIN, LOW);
-
-      // 포신을 원래 각도로 복원
-      setCannonAngle(cannonAngle);
 
       // 효과음 1 재생 재개 (게임패드가 연결되어 있지 않은 경우)
       if (!gamepadConnected && !machineGunFiring) {
