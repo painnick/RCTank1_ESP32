@@ -41,7 +41,7 @@ static auto MAIN_TAG = "RC_TANK";
 // 모터 듀티(0~100) 데드존
 #define MOTOR_DUTY_MIN 0
 #define MOTOR_DUTY_MAX 100
-#define MOTOR_DEAD_ZONE 60
+#define MOTOR_DEAD_ZONE 65
 constexpr int MOTOR_ACTIVE_DUTY = 100 - MOTOR_DEAD_ZONE;
 
 // 모터 설정 구조체
