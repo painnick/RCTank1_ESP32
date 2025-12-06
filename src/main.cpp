@@ -24,8 +24,7 @@ static auto MAIN_TAG = "RC_TANK";
 #define TURRET_IN2 21
 #define CANNON_LED_PIN 4
 #define HEADLIGHT_PIN 16
-#define CANNON_MOUNT_SERVO_PIN \
-  19                         // 포 마운트 서보 모터 핀 (우측 Y축으로 각도 조절)
+#define CANNON_MOUNT_SERVO_PIN 19 // 포 마운트 서보 모터 핀 (우측 Y축으로 각도 조절)
 #define CANNON_SERVO_PIN 18  // 포신 서보 모터 핀 (A 버튼으로 당기기)
 
 // MCPWM 설정 (모든 모터는 MCPWM_UNIT_0 사용)
