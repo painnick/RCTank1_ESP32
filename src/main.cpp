@@ -50,6 +50,9 @@ constexpr int MOTOR_ACTIVE_DUTY = 100 - MOTOR_DEAD_ZONE;
 #define HEADLIGHT_PWM_RESOLUTION 8
 #define HEADLIGHT_DUTY_ON 128  // 50% 밝기 (255의 절반)
 #define HEADLIGHT_DUTY_OFF 0
+#define HEADLIGHT_DUTY_MIN 8
+#define HEADLIGHT_DUTY_MAX 255
+#define HEADLIGHT_DUTY_STEP 16
 
 // 모터 설정 구조체
 typedef struct {
@@ -120,6 +123,7 @@ MotorConfig turretMotor = {.in1Pin = TURRET_IN1,
 
 // LED 상태
 bool headlightOn = false;
+int headlightDuty = 0;  // 현재 헤드라이트 밝기 (0~255)
 unsigned long lastBlinkTime = 0;
 constexpr unsigned long blinkInterval = 100;  // 100ms 간격으로 깜빡임
 
@@ -409,8 +413,8 @@ void processGamepad(ControllerPtr ctl) {
   static unsigned long r1LastChangeTime = 0;
   constexpr unsigned long volumeChangeInterval = 100;  // 100ms 간격으로 볼륨 변경
 
-  // L1 버튼으로 볼륨 감소
-  if (ctl->l1()) {
+  // L1 버튼으로 볼륨 감소 (Y 버튼이 눌리지 않았을 때만)
+  if (ctl->l1() && !ctl->y()) {
     if (!l1ButtonPressed) {
       l1ButtonPressed = true;
       tempVolume = currentVolume;  // 현재 볼륨을 임시 볼륨으로 복사
@@ -424,7 +428,7 @@ void processGamepad(ControllerPtr ctl) {
       l1LastChangeTime = millis();
       ESP_LOGI(MAIN_TAG, "Volume decreased to: %d", tempVolume);
     }
-  } else {
+  } else if (!ctl->l1()) {  // L1 버튼 해제 시에만 처리
     if (l1ButtonPressed) {
       l1ButtonPressed = false;
       // L1 버튼을 뗐을 때 볼륨 변경사항 저장
@@ -437,8 +441,8 @@ void processGamepad(ControllerPtr ctl) {
     }
   }
 
-  // R1 버튼으로 볼륨 증가
-  if (ctl->r1()) {
+  // R1 버튼으로 볼륨 증가 (Y 버튼이 눌리지 않았을 때만)
+  if (ctl->r1() && !ctl->y()) {
     if (!r1ButtonPressed) {
       r1ButtonPressed = true;
       tempVolume = currentVolume;  // 현재 볼륨을 임시 볼륨으로 복사
@@ -452,7 +456,7 @@ void processGamepad(ControllerPtr ctl) {
       r1LastChangeTime = millis();
       ESP_LOGI(MAIN_TAG, "Volume increased to: %d", tempVolume);
     }
-  } else {
+  } else if (!ctl->r1()) {  // R1 버튼 해제 시에만 처리
     if (r1ButtonPressed) {
       r1ButtonPressed = false;
       // R1 버튼을 뗐을 때 볼륨 변경사항 저장
@@ -471,16 +475,44 @@ void processGamepad(ControllerPtr ctl) {
     volumeChanged = false;
   }
 
-  // 헤드라이트 토글 (Y 버튼으로 변경, 100ms 간격)
-  static unsigned long lastHeadlightChangeTime = 0;
-  constexpr unsigned long headlightChangeInterval = 500;
+  // 헤드라이트 제어 관련 변수
+  static bool yButtonPressed = false;
+  static unsigned long lastBrightnessChangeTime = 0;
+  constexpr unsigned long brightnessChangeInterval = 200;  // 밝기 변경 간격
 
-  if (ctl->y() &&
-      (millis() - lastHeadlightChangeTime >= headlightChangeInterval)) {
-    headlightOn = !headlightOn;
-    ledcWrite(HEADLIGHT_PWM_CHANNEL, headlightOn ? HEADLIGHT_DUTY_ON : HEADLIGHT_DUTY_OFF);
-    lastHeadlightChangeTime = millis();
-    ESP_LOGI(MAIN_TAG, "Headlight is %s", headlightOn ? "On" : "Off");
+  // Y 버튼 처리 (밝기 조절 및 토글)
+  if (ctl->y()) {
+    // 1. 밝기 조절 (L1/R1과 조합)
+    if (ctl->l1() || ctl->r1()) {
+      if (millis() - lastBrightnessChangeTime >= brightnessChangeInterval) {
+        if (ctl->l1()) {
+          headlightDuty = constrain(headlightDuty - HEADLIGHT_DUTY_STEP, HEADLIGHT_DUTY_MIN, HEADLIGHT_DUTY_MAX);
+          ESP_LOGI(MAIN_TAG, "Headlight Brightness Decreased: %d", headlightDuty);
+        }
+        if (ctl->r1()) {
+          headlightDuty = constrain(headlightDuty + HEADLIGHT_DUTY_STEP, HEADLIGHT_DUTY_MIN, HEADLIGHT_DUTY_MAX);
+          ESP_LOGI(MAIN_TAG, "Headlight Brightness Increased: %d", headlightDuty);
+        }
+        // 현재 켜져있다면 즉시 적용
+        if (headlightOn) {
+          ledcWrite(HEADLIGHT_PWM_CHANNEL, headlightDuty);
+        }
+        lastBrightnessChangeTime = millis();
+      }
+      // 밝기 조절 중에는 토글 방지를 위해 pressed 상태 유지
+      yButtonPressed = true;
+    }
+    // 2. 헤드라이트 토글 (단독 누름, 최초 눌림 시점)
+    else if (!yButtonPressed) {
+      yButtonPressed = true;
+      headlightOn = !headlightOn;
+      if (headlightOn && headlightDuty < HEADLIGHT_DUTY_MIN)
+        headlightDuty = HEADLIGHT_DUTY_MIN;
+      ledcWrite(HEADLIGHT_PWM_CHANNEL, headlightOn ? headlightDuty : HEADLIGHT_DUTY_OFF);
+      ESP_LOGI(MAIN_TAG, "Headlight is %s (Duty: %d)", headlightOn ? "On" : "Off", headlightDuty);
+    }
+  } else {
+    yButtonPressed = false;
   }
 
   // Select + Start 버튼 3초 이상 동시 누름으로 EEPROM 초기화 및 재시작
