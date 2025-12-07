@@ -24,8 +24,8 @@ static auto MAIN_TAG = "RC_TANK";
 #define TURRET_IN2 21
 #define CANNON_LED_PIN 4
 #define HEADLIGHT_PIN 16
-#define CANNON_MOUNT_SERVO_PIN 19 // 포 마운트 서보 모터 핀 (우측 Y축으로 각도 조절)
-#define CANNON_SERVO_PIN 18  // 포신 서보 모터 핀 (A 버튼으로 당기기)
+#define CANNON_MOUNT_SERVO_PIN 19  // 포 마운트 서보 모터 핀 (우측 Y축으로 각도 조절)
+#define CANNON_SERVO_PIN 18        // 포신 서보 모터 핀 (A 버튼으로 당기기)
 
 // MCPWM 설정 (모든 모터는 MCPWM_UNIT_0 사용)
 #define MCPWM_UNIT MCPWM_UNIT_0
@@ -43,6 +43,13 @@ static auto MAIN_TAG = "RC_TANK";
 #define MOTOR_DUTY_MAX 100
 #define MOTOR_DEAD_ZONE 65
 constexpr int MOTOR_ACTIVE_DUTY = 100 - MOTOR_DEAD_ZONE;
+
+// 헤드라이트 PWM 설정
+#define HEADLIGHT_PWM_CHANNEL 0
+#define HEADLIGHT_PWM_FREQ 5000
+#define HEADLIGHT_PWM_RESOLUTION 8
+#define HEADLIGHT_DUTY_ON 128  // 50% 밝기 (255의 절반)
+#define HEADLIGHT_DUTY_OFF 0
 
 // 모터 설정 구조체
 typedef struct {
@@ -66,26 +73,26 @@ bool gamepadConnected = false;
 
 // DFPlayer 관련 변수
 DFPlayerMini_Fast myDFPlayer;
-HardwareSerial DFPlayerSerial(2); // UART2 사용
+HardwareSerial DFPlayerSerial(2);  // UART2 사용
 unsigned long lastIdleSoundTime = 0;
-constexpr unsigned long idleSoundInterval = 13000; // 13초마다 효과음 1 재생
+constexpr unsigned long idleSoundInterval = 13000;  // 13초마다 효과음 1 재생
 
 // 서보 모터 객체
-Servo cannonMountServo; // 포 마운트 서보 모터
-Servo cannonServo; // 포신 서보 모터
+Servo cannonMountServo;  // 포 마운트 서보 모터
+Servo cannonServo;       // 포신 서보 모터
 
 // 모터 제어 변수
 
 int leftTrackPWM = 0;
 int rightTrackPWM = 0;
 int turretPWM = 0;
-int cannonMountAngle = 90; // 포 마운트 기본 각도 (중앙)
-constexpr int cannonAngle = 90; // 포신 기본 각도 (중앙)
+int cannonMountAngle = 90;       // 포 마운트 기본 각도 (중앙)
+constexpr int cannonAngle = 90;  // 포신 기본 각도 (중앙)
 
 // 볼륨 제어 변수
-int currentVolume = 20; // 현재 볼륨 (1-30)
-int tempVolume = 20; // 임시 볼륨 (버튼을 누르고 있는 동안 사용)
-bool volumeChanged = false; // 볼륨이 변경되었는지 확인
+int currentVolume = 20;      // 현재 볼륨 (1-30)
+int tempVolume = 20;         // 임시 볼륨 (버튼을 누르고 있는 동안 사용)
+bool volumeChanged = false;  // 볼륨이 변경되었는지 확인
 
 // DC 모터 이전 속도 값 저장 변수
 int prevLeftTrackSpeed = 0;
@@ -114,18 +121,18 @@ MotorConfig turretMotor = {.in1Pin = TURRET_IN1,
 // LED 상태
 bool headlightOn = false;
 unsigned long lastBlinkTime = 0;
-constexpr unsigned long blinkInterval = 100; // 100ms 간격으로 깜빡임
+constexpr unsigned long blinkInterval = 100;  // 100ms 간격으로 깜빡임
 
 // 포신 발사 관련 변수
 bool cannonFiring = false;
 unsigned long cannonStartTime = 0;
-constexpr unsigned long cannonDuration = 1000; // 1초 동안 포신 당김 (재발사 방지 쿨타임 역할)
-constexpr unsigned long cannonLedDuration = 200; // LED는 200ms만 켜짐
+constexpr unsigned long cannonDuration = 1000;    // 1초 동안 포신 당김 (재발사 방지 쿨타임 역할)
+constexpr unsigned long cannonLedDuration = 200;  // LED는 200ms만 켜짐
 
 // 기관총 발사 관련 변수
 bool machineGunFiring = false;
 unsigned long machineGunStartTime = 0;
-constexpr unsigned long machineGunDuration = 600; // 1초간 기관총 발사
+constexpr unsigned long machineGunDuration = 600;  // 1초간 기관총 발사
 
 // 효과음 파일 번호
 #define SOUND_IDLE 1
@@ -265,7 +272,7 @@ void loadVolumeSettings() {
 
   // 기본값 설정 (EEPROM이 초기화되지 않은 경우)
   if (volume < 10 || volume > 30) {
-    volume = 20; // 기본 볼륨 20
+    volume = 20;  // 기본 볼륨 20
     EEPROM.write(EEPROM_VOLUME_ADDR, volume);
     EEPROM.commit();
   }
@@ -332,18 +339,18 @@ void processGamepad(ControllerPtr ctl) {
   // D-PAD 좌우로 터렛 제어
   int turretSpeed = 0;
   if (ctl->dpad() == DPAD_LEFT) {
-    turretSpeed = STICK_INPUT_MIN; // 좌측 회전
+    turretSpeed = STICK_INPUT_MIN;  // 좌측 회전
   } else if (ctl->dpad() == DPAD_RIGHT) {
-    turretSpeed = STICK_INPUT_MAX; // 우측 회전
+    turretSpeed = STICK_INPUT_MAX;  // 우측 회전
   }
   setMotorSpeed(&turretMotor, turretSpeed);
 
   // D-PAD 상하로 포 마운트 각도 제어
   if (ctl->dpad() == DPAD_UP) {
-    cannonMountAngle = constrain(cannonMountAngle + 2, 75, 160); // 위로 올림
+    cannonMountAngle = constrain(cannonMountAngle + 2, 75, 160);  // 위로 올림
     setCannonMountAngle(cannonMountAngle);
   } else if (ctl->dpad() == DPAD_DOWN) {
-    cannonMountAngle = constrain(cannonMountAngle - 2, 75, 160); // 아래로 내림
+    cannonMountAngle = constrain(cannonMountAngle - 2, 75, 160);  // 아래로 내림
     setCannonMountAngle(cannonMountAngle);
   }
 
@@ -360,10 +367,10 @@ void processGamepad(ControllerPtr ctl) {
     // 게임 패드 진동
     ctl->playDualRumble(0, 400, 0xFF, 0x0);
 
-    cannonServo.attach(CANNON_SERVO_PIN); // 포신 서보 모터
+    cannonServo.attach(CANNON_SERVO_PIN);  // 포신 서보 모터
     delay(100);
     // 포신 당기기
-    setCannonAngle(cannonAngle - 90); // 포신을 아래로 당김
+    setCannonAngle(cannonAngle - 90);  // 포신을 아래로 당김
 
     digitalWrite(CANNON_LED_PIN, LOW);
 
@@ -374,13 +381,13 @@ void processGamepad(ControllerPtr ctl) {
 
     delay(100);
 
-    setCannonAngle(cannonAngle); // 포신을 원래 위치로 복원
+    setCannonAngle(cannonAngle);  // 포신을 원래 위치로 복원
 
     setMotorSpeed(&leftTrackMotor, 0);
     setMotorSpeed(&rightTrackMotor, 0);
 
     delay(300);
-    cannonServo.detach(); // 포신 서보 모터
+    cannonServo.detach();  // 포신 서보 모터
   }
 
   // A 버튼으로 기관총 발사
@@ -400,13 +407,13 @@ void processGamepad(ControllerPtr ctl) {
   static bool r1ButtonPressed = false;
   static unsigned long l1LastChangeTime = 0;
   static unsigned long r1LastChangeTime = 0;
-  constexpr unsigned long volumeChangeInterval = 100; // 100ms 간격으로 볼륨 변경
+  constexpr unsigned long volumeChangeInterval = 100;  // 100ms 간격으로 볼륨 변경
 
   // L1 버튼으로 볼륨 감소
   if (ctl->l1()) {
     if (!l1ButtonPressed) {
       l1ButtonPressed = true;
-      tempVolume = currentVolume; // 현재 볼륨을 임시 볼륨으로 복사
+      tempVolume = currentVolume;  // 현재 볼륨을 임시 볼륨으로 복사
       l1LastChangeTime = millis();
     }
 
@@ -423,7 +430,7 @@ void processGamepad(ControllerPtr ctl) {
       // L1 버튼을 뗐을 때 볼륨 변경사항 저장
       if (tempVolume != currentVolume) {
         currentVolume = constrain(tempVolume, 10, 30);
-        myDFPlayer.volume(currentVolume); // DFPlayer 볼륨 적용
+        myDFPlayer.volume(currentVolume);  // DFPlayer 볼륨 적용
         volumeChanged = true;
         ESP_LOGI(MAIN_TAG, "Volume change confirmed: %d", currentVolume);
       }
@@ -434,7 +441,7 @@ void processGamepad(ControllerPtr ctl) {
   if (ctl->r1()) {
     if (!r1ButtonPressed) {
       r1ButtonPressed = true;
-      tempVolume = currentVolume; // 현재 볼륨을 임시 볼륨으로 복사
+      tempVolume = currentVolume;  // 현재 볼륨을 임시 볼륨으로 복사
       r1LastChangeTime = millis();
     }
 
@@ -451,7 +458,7 @@ void processGamepad(ControllerPtr ctl) {
       // R1 버튼을 뗐을 때 볼륨 변경사항 저장
       if (tempVolume != currentVolume) {
         currentVolume = constrain(tempVolume, 10, 30);
-        myDFPlayer.volume(currentVolume); // DFPlayer 볼륨 적용
+        myDFPlayer.volume(currentVolume);  // DFPlayer 볼륨 적용
         volumeChanged = true;
         ESP_LOGI(MAIN_TAG, "Volume change confirmed: %d", currentVolume);
       }
@@ -471,7 +478,7 @@ void processGamepad(ControllerPtr ctl) {
   if (ctl->y() &&
       (millis() - lastHeadlightChangeTime >= headlightChangeInterval)) {
     headlightOn = !headlightOn;
-    digitalWrite(HEADLIGHT_PIN, headlightOn ? HIGH : LOW);
+    ledcWrite(HEADLIGHT_PWM_CHANNEL, headlightOn ? HEADLIGHT_DUTY_ON : HEADLIGHT_DUTY_OFF);
     lastHeadlightChangeTime = millis();
     ESP_LOGI(MAIN_TAG, "Headlight is %s", headlightOn ? "On" : "Off");
   }
@@ -566,7 +573,7 @@ void setup() {
   ESP_LOGI(MAIN_TAG, "RC Tank Initialization...");
 
 #ifdef DISABLE_BROWNOUT_DETECTOR
-  WRITE_PERI_REG(RTC_CNTL_BROWN_OUT_REG, 0); // Disable Brownout Detector
+  WRITE_PERI_REG(RTC_CNTL_BROWN_OUT_REG, 0);  // Disable Brownout Detector
 #endif
 
   // Brownout을 피하기 위해 CPU 클록을 160 MHz로 낮춤
@@ -583,13 +590,18 @@ void setup() {
   pinMode(TURRET_IN1, OUTPUT);
   pinMode(TURRET_IN2, OUTPUT);
   pinMode(CANNON_LED_PIN, OUTPUT);
-  pinMode(HEADLIGHT_PIN, OUTPUT);
+  // pinMode(HEADLIGHT_PIN, OUTPUT); // LEDC로 제어하므로 주석 처리 또는 삭제
+
+  // 헤드라이트 PWM 초기화
+  ledcSetup(HEADLIGHT_PWM_CHANNEL, HEADLIGHT_PWM_FREQ, HEADLIGHT_PWM_RESOLUTION);
+  ledcAttachPin(HEADLIGHT_PIN, HEADLIGHT_PWM_CHANNEL);
+  ledcWrite(HEADLIGHT_PWM_CHANNEL, HEADLIGHT_DUTY_OFF);
 
   // MCPWM 설정
   mcpwm_config_t pwm_config;
-  pwm_config.frequency = 5000; // 5kHz
-  pwm_config.cmpr_a = 0; // 초기 듀티 사이클 0%
-  pwm_config.cmpr_b = 0; // 초기 듀티 사이클 0%
+  pwm_config.frequency = 5000;  // 5kHz
+  pwm_config.cmpr_a = 0;        // 초기 듀티 사이클 0%
+  pwm_config.cmpr_b = 0;        // 초기 듀티 사이클 0%
   pwm_config.counter_mode = MCPWM_UP_COUNTER;
   pwm_config.duty_mode = MCPWM_DUTY_MODE_0;
 
@@ -615,7 +627,7 @@ void setup() {
   setMotorSpeed(&turretMotor, 0);
 
   // 서보 모터 초기화
-  cannonMountServo.attach(CANNON_MOUNT_SERVO_PIN); // 포 마운트 서보 모터
+  cannonMountServo.attach(CANNON_MOUNT_SERVO_PIN);  // 포 마운트 서보 모터
   // cannonServo.attach(CANNON_SERVO_PIN); // 포신 서보 모터
 
   // 서보 모터 초기 위치 설정
@@ -673,5 +685,5 @@ void loop() {
   // 효과음 반복 재생 처리
   processIdleSound();
 
-  delay(10); // 10ms 딜레이
+  delay(10);  // 10ms 딜레이
 }
