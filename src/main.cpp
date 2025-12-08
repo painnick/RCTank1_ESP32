@@ -41,8 +41,13 @@ static auto MAIN_TAG = "RC_TANK";
 // 모터 듀티(0~100) 데드존
 #define MOTOR_DUTY_MIN 0
 #define MOTOR_DUTY_MAX 100
-#define MOTOR_DEAD_ZONE 65
+#define MOTOR_DEAD_ZONE 70
 constexpr int MOTOR_ACTIVE_DUTY = 100 - MOTOR_DEAD_ZONE;
+constexpr int SOFT_START_STEP = 4;  // 10ms마다 4씩 증가(1~100)
+
+// Kickstart 설정 (정지 상태에서 출발 시)
+constexpr int KICKSTART_DUTY = 80;
+constexpr unsigned long KICKSTART_DURATION = 200;  // 200ms
 
 // 헤드라이트 PWM 설정
 #define HEADLIGHT_PWM_CHANNEL 5
@@ -60,7 +65,7 @@ typedef struct {
   int in2Pin;
   mcpwm_unit_t unit;
   mcpwm_timer_t timer;
-  int* prevSpeed;
+  int* currentSpeed;  // prevSpeed를 currentSpeed로 의미 변경
 } MotorConfig;
 
 // EEPROM 주소
@@ -86,8 +91,11 @@ Servo cannonServo;       // 포신 서보 모터
 
 // 모터 제어 변수
 
-int leftTrackPWM = 0;
-int rightTrackPWM = 0;
+int leftTrackPWM = 0;          // 현재 적용된 PWM (Soft Start 적용됨)
+int rightTrackPWM = 0;         // 현재 적용된 PWM
+int targetLeftTrackDuty = 0;   // 목표 PWM
+int targetRightTrackDuty = 0;  // 목표 PWM
+
 int turretPWM = 0;
 int cannonMountAngle = 90;       // 포 마운트 기본 각도 (중앙)
 constexpr int cannonAngle = 90;  // 포신 기본 각도 (중앙)
@@ -97,29 +105,35 @@ int currentVolume = 20;      // 현재 볼륨 (1-30)
 int tempVolume = 20;         // 임시 볼륨 (버튼을 누르고 있는 동안 사용)
 bool volumeChanged = false;  // 볼륨이 변경되었는지 확인
 
-// DC 모터 이전 속도 값 저장 변수
-int prevLeftTrackSpeed = 0;
-int prevRightTrackSpeed = 0;
+// DC 모터 현재 속도 값 저장 변수 (prev -> current)
+int currentLeftTrackSpeed = 0;
+int currentRightTrackSpeed = 0;
 int prevTurretSpeed = 0;
+
+// Kickstart 상태 변수
+bool leftKickstartActive = false;
+unsigned long leftKickstartEndTime = 0;
+bool rightKickstartActive = false;
+unsigned long rightKickstartEndTime = 0;
 
 // 모터 설정 구조체 인스턴스
 MotorConfig leftTrackMotor = {.in1Pin = LEFT_TRACK_IN1,
                               .in2Pin = LEFT_TRACK_IN2,
                               .unit = MCPWM_UNIT,
                               .timer = LEFT_TRACK_TIMER,
-                              .prevSpeed = &prevLeftTrackSpeed};
+                              .currentSpeed = &currentLeftTrackSpeed};
 
 MotorConfig rightTrackMotor = {.in1Pin = RIGHT_TRACK_IN1,
                                .in2Pin = RIGHT_TRACK_IN2,
                                .unit = MCPWM_UNIT,
                                .timer = RIGHT_TRACK_TIMER,
-                               .prevSpeed = &prevRightTrackSpeed};
+                               .currentSpeed = &currentRightTrackSpeed};
 
 MotorConfig turretMotor = {.in1Pin = TURRET_IN1,
                            .in2Pin = TURRET_IN2,
                            .unit = MCPWM_UNIT,
                            .timer = TURRET_TIMER,
-                           .prevSpeed = &prevTurretSpeed};
+                           .currentSpeed = &prevTurretSpeed};  // 터렛은 Soft Start 미적용으로 prev 유지
 
 // LED 상태
 bool headlightOn = false;
@@ -130,7 +144,7 @@ constexpr unsigned long blinkInterval = 100;  // 100ms 간격으로 깜빡임
 // 포신 발사 관련 변수
 bool cannonFiring = false;
 unsigned long cannonStartTime = 0;
-constexpr unsigned long cannonDuration = 1000;    // 1초 동안 포신 당김 (재발사 방지 쿨타임 역할)
+constexpr unsigned long cannonDuration = 1500;    // 1초 동안 포신 당김 (재발사 방지 쿨타임 역할)
 constexpr unsigned long cannonLedDuration = 200;  // LED는 200ms만 켜짐
 
 // 기관총 발사 관련 변수
@@ -201,14 +215,12 @@ void onDisconnectedController(ControllerPtr ctl) {
   }
 }
 
-// DC 모터 제어 함수 (MCPWM 사용, 속도 변화가 없으면 호출 무시)
-// stick : -511~512
-// motor duty : 0~100
-void setMotorSpeed(const MotorConfig* motor, const int stick) {
+// 스틱 입력값을 PWM 듀티로 변환하는 함수
+int calculateMotorDuty(const int stick) {
   int duty = 0;
   const int absStick = abs(stick);
   if (absStick < STICK_DEAD_ZONE) {
-    duty = MOTOR_DUTY_MIN;
+    duty = 0;
   } else if (absStick > 500) {
     duty = stick > 0 ? MOTOR_DUTY_MAX : -MOTOR_DUTY_MAX;
   } else {
@@ -223,15 +235,23 @@ void setMotorSpeed(const MotorConfig* motor, const int stick) {
     else
       duty -= MOTOR_ACTIVE_DUTY;
   }
+  return duty;
+}
+
+// PWM을 모터에 적용하는 함수 (이전 setMotorSpeed의 하드웨어 제어 부분)
+void applyMotorPWM(const MotorConfig* motor, int duty) {
+  if (abs(duty) < MOTOR_DEAD_ZONE) {
+    duty = 0;
+  }
 
   // 속도 변화가 없으면 호출 무시
-  if (duty == *(motor->prevSpeed)) {
+  if (duty == *(motor->currentSpeed)) {
     return;
   }
 
   ESP_LOGD(MAIN_TAG,
-           "setMotorSpeed IN1:%d IN2:%d Unit:%d Timer:%d Stick:%d Duty:%3d (prev:%d)",
-           motor->in1Pin, motor->in2Pin, motor->unit, motor->timer, stick, duty, *(motor->prevSpeed));
+           "applyMotorPWM IN1:%d IN2:%d Unit:%d Timer:%d Duty:%3d (prev:%d)",
+           motor->in1Pin, motor->in2Pin, motor->unit, motor->timer, duty, *(motor->currentSpeed));
 
   if (duty > 0) {
     // 정방향 회전
@@ -247,8 +267,77 @@ void setMotorSpeed(const MotorConfig* motor, const int stick) {
     mcpwm_set_duty(motor->unit, motor->timer, MCPWM_OPR_B, 0);
   }
 
-  // 현재 속도를 이전 속도로 저장
-  *(motor->prevSpeed) = duty;
+  // 현재 속도를 저장
+  *(motor->currentSpeed) = duty;
+}
+
+// Soft Start 처리 함수
+void processSoftStart() {
+  const unsigned long currentTime = millis();
+
+  // --------------------------------------------------------
+  // 좌측 트랙 처리
+  // --------------------------------------------------------
+  // Kickstart 시작 조건 확인: 현재 정지(0) 상태이고 목표가 0이 아닐 때
+  if (leftTrackPWM == 0 && targetLeftTrackDuty != 0 && !leftKickstartActive) {
+    leftKickstartActive = true;
+    leftKickstartEndTime = currentTime + KICKSTART_DURATION;
+  }
+
+  // Kickstart 취소 및 종료 조건
+  if (leftKickstartActive) {
+    if (targetLeftTrackDuty == 0) {
+      // 목표가 0이 되면 즉시 Kickstart 중지 (Soft Stop으로 전환)
+      leftKickstartActive = false;
+    } else if (currentTime > leftKickstartEndTime) {
+      // 시간 초과 시 Kickstart 종료 (Soft Start ramping으로 이어짐)
+      leftKickstartActive = false;
+    }
+  }
+
+  if (leftKickstartActive) {
+    // Kickstart 적용 (목표 방향에 따라 76 or -76)
+    leftTrackPWM = (targetLeftTrackDuty > 0) ? KICKSTART_DUTY : -KICKSTART_DUTY;
+  } else {
+    // 일반 Soft Start (Ramping)
+    if (leftTrackPWM < targetLeftTrackDuty) {
+      leftTrackPWM += SOFT_START_STEP;
+      if (leftTrackPWM > targetLeftTrackDuty) leftTrackPWM = targetLeftTrackDuty;
+    } else if (leftTrackPWM > targetLeftTrackDuty) {
+      leftTrackPWM -= SOFT_START_STEP;
+      if (leftTrackPWM < targetLeftTrackDuty) leftTrackPWM = targetLeftTrackDuty;
+    }
+  }
+  applyMotorPWM(&leftTrackMotor, leftTrackPWM);
+
+  // --------------------------------------------------------
+  // 우측 트랙 처리
+  // --------------------------------------------------------
+  if (rightTrackPWM == 0 && targetRightTrackDuty != 0 && !rightKickstartActive) {
+    rightKickstartActive = true;
+    rightKickstartEndTime = currentTime + KICKSTART_DURATION;
+  }
+
+  if (rightKickstartActive) {
+    if (targetRightTrackDuty == 0) {
+      rightKickstartActive = false;
+    } else if (currentTime > rightKickstartEndTime) {
+      rightKickstartActive = false;
+    }
+  }
+
+  if (rightKickstartActive) {
+    rightTrackPWM = (targetRightTrackDuty > 0) ? KICKSTART_DUTY : -KICKSTART_DUTY;
+  } else {
+    if (rightTrackPWM < targetRightTrackDuty) {
+      rightTrackPWM += SOFT_START_STEP;
+      if (rightTrackPWM > targetRightTrackDuty) rightTrackPWM = targetRightTrackDuty;
+    } else if (rightTrackPWM > targetRightTrackDuty) {
+      rightTrackPWM -= SOFT_START_STEP;
+      if (rightTrackPWM < targetRightTrackDuty) rightTrackPWM = targetRightTrackDuty;
+    }
+  }
+  applyMotorPWM(&rightTrackMotor, rightTrackPWM);
 }
 
 // 포 마운트 서보 모터 제어 함수
@@ -336,8 +425,9 @@ void processGamepad(ControllerPtr ctl) {
   // 좌측 스틱 Y축으로 좌측 트랙 제어, 우측 스틱 Y축으로 우측 트랙 제어
 
   // 모터 제어
-  setMotorSpeed(&leftTrackMotor, ctl->axisY());
-  setMotorSpeed(&rightTrackMotor, ctl->axisRY());
+  // 모터 제어 (Target 설정)
+  targetLeftTrackDuty = calculateMotorDuty(ctl->axisY());
+  targetRightTrackDuty = calculateMotorDuty(ctl->axisRY());
 
   // D-PAD로 터렛과 포 마운트 제어
   // D-PAD 좌우로 터렛 제어
@@ -347,7 +437,8 @@ void processGamepad(ControllerPtr ctl) {
   } else if (ctl->dpad() == DPAD_RIGHT) {
     turretSpeed = STICK_INPUT_MAX;  // 우측 회전
   }
-  setMotorSpeed(&turretMotor, turretSpeed);
+  int turretDuty = calculateMotorDuty(turretSpeed);
+  applyMotorPWM(&turretMotor, turretDuty);
 
   // D-PAD 상하로 포 마운트 각도 제어
   if (ctl->dpad() == DPAD_UP) {
@@ -371,27 +462,41 @@ void processGamepad(ControllerPtr ctl) {
     // 게임 패드 진동
     ctl->playDualRumble(0, 400, 0xFF, 0x0);
 
-    cannonServo.attach(CANNON_SERVO_PIN);  // 포신 서보 모터
+    // cannonServo.attach(CANNON_SERVO_PIN);  // 포신 서보 모터
     delay(100);
     // 포신 당기기
     setCannonAngle(cannonAngle - 90);  // 포신을 아래로 당김
+
+    delay(100);
 
     digitalWrite(CANNON_LED_PIN, LOW);
 
     delay(100);
 
-    setMotorSpeed(&leftTrackMotor, 256 + 128);
-    setMotorSpeed(&rightTrackMotor, 256 + 128);
+    // recoil: Soft Start bypass (즉시 적용)
+    constexpr int recoilDuty = 70;
+    leftTrackPWM = recoilDuty;
+    rightTrackPWM = recoilDuty;
+    targetLeftTrackDuty = recoilDuty;
+    targetRightTrackDuty = recoilDuty;
+    applyMotorPWM(&leftTrackMotor, leftTrackPWM);
+    applyMotorPWM(&rightTrackMotor, rightTrackPWM);
 
     delay(100);
 
+    // Stop (즉시 적용)
+    leftTrackPWM = 0;
+    rightTrackPWM = 0;
+    targetLeftTrackDuty = 0;
+    targetRightTrackDuty = 0;
+    applyMotorPWM(&leftTrackMotor, 0);
+    applyMotorPWM(&rightTrackMotor, 0);
+
     setCannonAngle(cannonAngle);  // 포신을 원래 위치로 복원
 
-    setMotorSpeed(&leftTrackMotor, 0);
-    setMotorSpeed(&rightTrackMotor, 0);
-
     delay(300);
-    cannonServo.detach();  // 포신 서보 모터
+    // cannonServo.detach();  // 포신 서보 모터
+    // delay(100);
   }
 
   // A 버튼으로 기관총 발사
@@ -654,13 +759,14 @@ void setup() {
   mcpwm_gpio_init(MCPWM_UNIT, MCPWM2B, TURRET_IN2);
 
   // 모터 정지
-  setMotorSpeed(&leftTrackMotor, 0);
-  setMotorSpeed(&rightTrackMotor, 0);
-  setMotorSpeed(&turretMotor, 0);
+  // 모터 정지
+  applyMotorPWM(&leftTrackMotor, 0);
+  applyMotorPWM(&rightTrackMotor, 0);
+  applyMotorPWM(&turretMotor, 0);
 
   // 서보 모터 초기화
   cannonMountServo.attach(CANNON_MOUNT_SERVO_PIN);  // 포 마운트 서보 모터
-  // cannonServo.attach(CANNON_SERVO_PIN); // 포신 서보 모터
+  cannonServo.attach(CANNON_SERVO_PIN); // 포신 서보 모터
 
   // 서보 모터 초기 위치 설정
   setCannonMountAngle(cannonMountAngle);
@@ -716,6 +822,9 @@ void loop() {
 
   // 효과음 반복 재생 처리
   processIdleSound();
+
+  // Soft Start 처리
+  processSoftStart();
 
   delay(10);  // 10ms 딜레이
 }
