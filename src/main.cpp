@@ -219,9 +219,9 @@ void setMotorSpeed(const MotorConfig* motor, const int stick) {
                MOTOR_ACTIVE_DUTY * -1,
                MOTOR_ACTIVE_DUTY);
     if (duty > 0)
-      duty += MOTOR_ACTIVE_DUTY;
+      duty += MOTOR_DEAD_ZONE;
     else
-      duty -= MOTOR_ACTIVE_DUTY;
+      duty -= MOTOR_DEAD_ZONE;
   }
 
   // 속도 변화가 없으면 호출 무시
