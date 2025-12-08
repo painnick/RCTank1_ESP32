@@ -385,10 +385,10 @@ void processGamepad(ControllerPtr ctl) {
 
     delay(100);
 
-    setCannonAngle(cannonAngle);  // 포신을 원래 위치로 복원
-
     setMotorSpeed(&leftTrackMotor, 0);
     setMotorSpeed(&rightTrackMotor, 0);
+
+    setCannonAngle(cannonAngle);  // 포신을 원래 위치로 복원
 
     delay(300);
     cannonServo.detach();  // 포신 서보 모터
