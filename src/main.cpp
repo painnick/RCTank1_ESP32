@@ -61,6 +61,8 @@ typedef struct {
   mcpwm_unit_t unit;
   mcpwm_timer_t timer;
   int* prevSpeed;
+  bool* startBoostActive;
+  unsigned long* startBoostStartTime;
 } MotorConfig;
 
 // EEPROM 주소
@@ -102,24 +104,38 @@ int prevLeftTrackSpeed = 0;
 int prevRightTrackSpeed = 0;
 int prevTurretSpeed = 0;
 
+// 트랙 시동 부스트: 정지 후 500ms 동안 80% 듀티
+constexpr int trackStartBoostDuty = 80;
+constexpr unsigned long trackStartBoostDuration = 500;
+bool leftTrackStartBoostActive = false;
+bool rightTrackStartBoostActive = false;
+unsigned long leftTrackStartBoostStartTime = 0;
+unsigned long rightTrackStartBoostStartTime = 0;
+
 // 모터 설정 구조체 인스턴스
 MotorConfig leftTrackMotor = {.in1Pin = LEFT_TRACK_IN1,
                               .in2Pin = LEFT_TRACK_IN2,
                               .unit = MCPWM_UNIT,
                               .timer = LEFT_TRACK_TIMER,
-                              .prevSpeed = &prevLeftTrackSpeed};
+                              .prevSpeed = &prevLeftTrackSpeed,
+                              .startBoostActive = &leftTrackStartBoostActive,
+                              .startBoostStartTime = &leftTrackStartBoostStartTime};
 
 MotorConfig rightTrackMotor = {.in1Pin = RIGHT_TRACK_IN1,
                                .in2Pin = RIGHT_TRACK_IN2,
                                .unit = MCPWM_UNIT,
                                .timer = RIGHT_TRACK_TIMER,
-                               .prevSpeed = &prevRightTrackSpeed};
+                               .prevSpeed = &prevRightTrackSpeed,
+                               .startBoostActive = &rightTrackStartBoostActive,
+                               .startBoostStartTime = &rightTrackStartBoostStartTime};
 
 MotorConfig turretMotor = {.in1Pin = TURRET_IN1,
                            .in2Pin = TURRET_IN2,
                            .unit = MCPWM_UNIT,
                            .timer = TURRET_TIMER,
-                           .prevSpeed = &prevTurretSpeed};
+                           .prevSpeed = &prevTurretSpeed,
+                           .startBoostActive = nullptr,
+                           .startBoostStartTime = nullptr};
 
 // LED 상태
 bool headlightOn = false;
@@ -204,7 +220,7 @@ void onDisconnectedController(ControllerPtr ctl) {
 // DC 모터 제어 함수 (MCPWM 사용, 속도 변화가 없으면 호출 무시)
 // stick : -511~512
 // motor duty : 0~100
-void setMotorSpeed(const MotorConfig* motor, const int stick) {
+void setMotorSpeed(const MotorConfig* motor, const int stick, boolean force = false) {
   int duty = 0;
   const int absStick = abs(stick);
   if (absStick < STICK_DEAD_ZONE) {
@@ -222,6 +238,29 @@ void setMotorSpeed(const MotorConfig* motor, const int stick) {
       duty += MOTOR_DEAD_ZONE;
     else
       duty -= MOTOR_DEAD_ZONE;
+  }
+
+  if (!force) {
+    // 트랙 시동 부스트: 정지 후 움직이기 시작할 때 500ms 동안 80% 듀티로 가동
+    if (motor->startBoostActive && motor->startBoostStartTime) {
+      if (duty != 0 && *(motor->prevSpeed) == 0) {
+        *(motor->startBoostActive) = true;
+        *(motor->startBoostStartTime) = millis();
+      }
+      if (*(motor->startBoostActive)) {
+        const unsigned long now = millis();
+        if (now - *(motor->startBoostStartTime) < trackStartBoostDuration) {
+          duty = (duty > 0) ? trackStartBoostDuty : -trackStartBoostDuty;
+        } else {
+          *(motor->startBoostActive) = false;
+        }
+      }
+      if (duty == 0) {
+        *(motor->startBoostActive) = false;
+      }
+    }
+  } else {
+    *(motor->startBoostActive) = false;
   }
 
   // 속도 변화가 없으면 호출 무시
@@ -380,8 +419,8 @@ void processGamepad(ControllerPtr ctl) {
 
     delay(100);
 
-    setMotorSpeed(&leftTrackMotor, 256 + 128);
-    setMotorSpeed(&rightTrackMotor, 256 + 128);
+    setMotorSpeed(&leftTrackMotor, 256 + 128, true);
+    setMotorSpeed(&rightTrackMotor, 256 + 128, true);
 
     delay(100);
 
