@@ -177,6 +177,9 @@ void onConnectedController(ControllerPtr ctl) {
       foundEmptySlot = true;
       gamepadConnected = true;
 
+      // 게임 패드 진동
+      ctl->playDualRumble(0, 300, 0xFF, 0x0);
+
       // 게임패드 연결 시 효과음 4 재생
       myDFPlayer.play(SOUND_CONNECTED);
       break;
@@ -410,7 +413,7 @@ void processGamepad(ControllerPtr ctl) {
     myDFPlayer.play(SOUND_CANNON);
 
     // 게임 패드 진동
-    ctl->playDualRumble(0, 400, 0xFF, 0x0);
+    ctl->playDualRumble(0, 500, 0xFF, 0xFF);
 
     cannonServo.attach(CANNON_SERVO_PIN); // 포신 서보 모터
     delay(100);
