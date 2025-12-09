@@ -254,13 +254,11 @@ void setMotorSpeed(const MotorConfig& motor, const int stick, boolean force = fa
         motor.startBoostActive = true;
         motor.startBoostStartTime = millis();
       }
-      if (motor.startBoostActive) {
-        const unsigned long now = millis();
-        if (now - motor.startBoostStartTime < trackStartBoostDuration) {
-          duty = (duty > 0) ? trackStartBoostDuty : -trackStartBoostDuty;
-        } else {
-          motor.startBoostActive = false;
-        }
+      const unsigned long now = millis();
+      if (now - motor.startBoostStartTime < trackStartBoostDuration) {
+        duty = (duty > 0) ? trackStartBoostDuty : -trackStartBoostDuty;
+      } else {
+        motor.startBoostActive = false;
       }
       if (duty == 0) {
         motor.startBoostActive = false;
@@ -526,12 +524,12 @@ void processGamepad(ControllerPtr ctl) {
   // 헤드라이트 제어 관련 변수
   static bool yButtonPressed = false;
   static unsigned long lastBrightnessChangeTime = 0;
-  constexpr unsigned long brightnessChangeInterval = 200; // 밝기 변경 간격
 
   // Y 버튼 처리 (밝기 조절 및 토글)
   if (ctl->y()) {
     // 1. 밝기 조절 (L1/R1과 조합)
     if (ctl->l1() || ctl->r1()) {
+      constexpr unsigned long brightnessChangeInterval = 200;
       if (millis() - lastBrightnessChangeTime >= brightnessChangeInterval) {
         if (ctl->l1()) {
           headlightDuty = constrain(headlightDuty - HEADLIGHT_DUTY_STEP, HEADLIGHT_DUTY_MIN, HEADLIGHT_DUTY_MAX);
