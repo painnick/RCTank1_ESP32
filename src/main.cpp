@@ -41,7 +41,9 @@ static auto MAIN_TAG = "RC_TANK";
 // 모터 듀티(0~100) 데드존
 #define MOTOR_DUTY_MIN 0
 #define MOTOR_DUTY_MAX 100
+#ifndef MOTOR_DEAD_ZONE
 #define MOTOR_DEAD_ZONE 65
+#endif
 constexpr int MOTOR_ACTIVE_DUTY = 100 - MOTOR_DEAD_ZONE;
 
 // 헤드라이트 PWM 설정
