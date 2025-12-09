@@ -424,13 +424,15 @@ void processGamepad(ControllerPtr ctl) {
 
     delay(100);
 
-    setMotorSpeed(leftTrackMotor, 256 + 128, true);
-    setMotorSpeed(rightTrackMotor, 256 + 128, true);
+    setMotorSpeed(leftTrackMotor, 256 + 64, true);
+    setMotorSpeed(rightTrackMotor, 256 + 64, true);
 
     delay(100);
 
     setMotorSpeed(leftTrackMotor, 0);
     setMotorSpeed(rightTrackMotor, 0);
+
+    delay(200);
 
     setCannonAngle(cannonAngle); // 포신을 원래 위치로 복원
 
