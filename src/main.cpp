@@ -150,7 +150,7 @@ constexpr unsigned long blinkInterval = 100; // 100ms 간격으로 깜빡임
 // 포신 발사 관련 변수
 bool cannonFiring = false;
 unsigned long cannonStartTime = 0;
-constexpr unsigned long cannonDuration = 1000; // 1초 동안 포신 당김 (재발사 방지 쿨타임 역할)
+constexpr unsigned long cannonDuration = 1500; // 1초 동안 포신 당김 (재발사 방지 쿨타임 역할)
 constexpr unsigned long cannonLedDuration = 200; // LED는 200ms만 켜짐
 
 // 기관총 발사 관련 변수
