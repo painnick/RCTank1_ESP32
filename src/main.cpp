@@ -279,16 +279,16 @@ void setMotorSpeed(const MotorConfig& motor, const int stick, boolean force = fa
 
   if (duty > 0) {
     // 정방향 회전
-    mcpwm_set_duty(motor.unit, motor.timer, MCPWM_OPR_A, static_cast<float>(duty));
-    mcpwm_set_duty(motor.unit, motor.timer, MCPWM_OPR_B, 0);
+    mcpwm_set_duty(motor.unit, motor.timer, MCPWM_OPR_A, 100);
+    mcpwm_set_duty(motor.unit, motor.timer, MCPWM_OPR_B, 100 - static_cast<float>(duty));
   } else if (duty < 0) {
     // 역방향 회전
-    mcpwm_set_duty(motor.unit, motor.timer, MCPWM_OPR_A, 0);
-    mcpwm_set_duty(motor.unit, motor.timer, MCPWM_OPR_B, static_cast<float>(-duty));
+    mcpwm_set_duty(motor.unit, motor.timer, MCPWM_OPR_A, 100 + static_cast<float>(duty));
+    mcpwm_set_duty(motor.unit, motor.timer, MCPWM_OPR_B, 100);
   } else {
     // 정지
-    mcpwm_set_duty(motor.unit, motor.timer, MCPWM_OPR_A, 0);
-    mcpwm_set_duty(motor.unit, motor.timer, MCPWM_OPR_B, 0);
+    mcpwm_set_duty(motor.unit, motor.timer, MCPWM_OPR_A, 100);
+    mcpwm_set_duty(motor.unit, motor.timer, MCPWM_OPR_B, 100);
   }
 
   // 현재 속도를 이전 속도로 저장
