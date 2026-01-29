@@ -23,6 +23,7 @@ static auto MAIN_TAG = "RC_TANK";
 #define TURRET_IN1 22
 #define TURRET_IN2 21
 #define CANNON_LED_PIN 4
+#define GATLING_LED_PIN 23
 #define HEADLIGHT_PIN 16
 #define CANNON_MOUNT_SERVO_PIN 19  // 포 마운트 서보 모터 핀 (우측 Y축으로 각도 조절)
 #define CANNON_SERVO_PIN 18        // 포신 서보 모터 핀 (A 버튼으로 당기기)
@@ -445,11 +446,21 @@ void processGamepad(ControllerPtr ctl) {
     machineGunFiring = true;
     machineGunStartTime = millis();
 
+    // 효과음 3 재생
+    myDFPlayer.play(SOUND_MACHINEGUN);
+
+    delay(500);
+
     // 게임 패드 진동
     ctl->playDualRumble(0, 300, 0xFF, 0x0);
 
-    // 효과음 3 재생
-    myDFPlayer.play(SOUND_MACHINEGUN);
+    for (int i = 0; i < 4; i++) {
+      digitalWrite(GATLING_LED_PIN, HIGH);
+      delay(100);
+      digitalWrite(GATLING_LED_PIN, LOW);
+      if (i < 3)
+        delay(100);
+    }
   }
 
   // L1 버튼으로 볼륨 조절 (둔감하게 처리)
@@ -670,6 +681,7 @@ void setup() {
   pinMode(TURRET_IN1, OUTPUT);
   pinMode(TURRET_IN2, OUTPUT);
   pinMode(CANNON_LED_PIN, OUTPUT);
+  pinMode(GATLING_LED_PIN, OUTPUT);
   // pinMode(HEADLIGHT_PIN, OUTPUT); // LEDC로 제어하므로 주석 처리 또는 삭제
 
   // 헤드라이트 PWM 초기화
